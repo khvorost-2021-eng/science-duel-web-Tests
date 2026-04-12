@@ -3478,43 +3478,65 @@ console.log('--- APP.JS LOADED ---');
     `;
   }
 
-  function renderProfile() {
-    if (!state.currentUser) { navigateTo('home'); return; }
-    
-    socket.emit('get-user', { username: state.currentUser.username }, (result) => {
-      if (!result || !result.ok) { navigateTo('home'); return; }
-      const user = result.user;
-      state.currentUser = user;
+  function renderProfile(userArg = null) {
+    if (!state.currentUser && !userArg) { navigateTo('home'); return; }
+
+    const render = (user) => {
+      const isOwn = state.currentUser && state.currentUser.username === user.username;
+      
+      if (isOwn) {
+        state.currentUser = user;
+      }
       
       const el = $('#screen-profile');
-      el.innerHTML = `
-        <div class="profile-container">
-          ${generateProfileHtml(user)}
+      let buttonsHtml = '';
+      
+      if (isOwn) {
+        buttonsHtml = `
           <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px">
             <button class="btn btn-primary btn-lg" id="profile-duel-btn">🏠 Создать комнату</button>
             <button class="btn btn-secondary btn-lg" id="profile-search-btn">🔍 Найти соперника</button>
             <button class="btn btn-accent btn-lg" id="profile-solo-btn">⚡ Штурм</button>
           </div>
+        `;
+      }
+
+      el.innerHTML = `
+        <div class="profile-container">
+          ${generateProfileHtml(user)}
+          ${buttonsHtml}
         </div>
       `;
-      $('#profile-duel-btn').addEventListener('click', () => {
-        renderDuelSetup();
-        navigateTo('duel-setup');
-      });
-      $('#profile-search-btn').addEventListener('click', () => {
-        renderMatchmaking();
-        navigateTo('matchmaking');
-      });
-      $('#profile-solo-btn').addEventListener('click', () => {
-        renderSoloSetup('blitz');
-        navigateTo('solo-setup');
-      });
+
+      if (isOwn) {
+        $('#profile-duel-btn').addEventListener('click', () => {
+          renderDuelSetup();
+          navigateTo('duel-setup');
+        });
+        $('#profile-search-btn').addEventListener('click', () => {
+          renderMatchmaking();
+          navigateTo('matchmaking');
+        });
+        $('#profile-solo-btn').addEventListener('click', () => {
+          renderSoloSetup('blitz');
+          navigateTo('solo-setup');
+        });
+      }
 
       // Load match history
       loadMatchHistory(user.username);
       // Load achievements
       loadAchievements(user.username);
-    });
+    };
+
+    if (userArg) {
+      render(userArg);
+    } else {
+      socket.emit('get-user', { username: state.currentUser.username }, (result) => {
+        if (!result || !result.ok) { navigateTo('home'); return; }
+        render(result.user);
+      });
+    }
   }
 
   function loadAchievements(username) {
@@ -5352,18 +5374,12 @@ window.showUserProfile = function(username) {
       return;
     }
     
-    // Отрисовываем профиль найденного пользователя с помощью переиспользованной функции
-    modal.innerHTML = `
-      <div class="modal-content-wrapper profile-container" style="padding:20px 40px; max-width:800px; width:100%; max-height: 90vh; overflow-y: auto; background: var(--bg-glass); backdrop-filter: blur(20px); border: 1px solid var(--border-glass);">
-        <button class="modal-close" id="modal-close-btn" style="position: absolute; right: 20px; top: 20px;">&times;</button>
-        ${generateProfileHtml(result.user)}
-      </div>
-    `;
-    addCloseListener();
+    // Если данные получены, закрываем окно загрузки
+    $('#modal-overlay').classList.remove('active');
     
-    // Запускаем асинхронную загрузку достижений и истории матчей
-    loadMatchHistory(result.user.username);
-    loadAchievements(result.user.username);
+    // Переиспользуем функцию для рендера своего профиля
+    renderProfile(result.user);
+    navigateTo('profile');
   });
 };
 
