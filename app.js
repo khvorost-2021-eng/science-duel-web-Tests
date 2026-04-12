@@ -3292,7 +3292,7 @@ console.log('--- APP.JS LOADED ---');
     const levelInfo = getLevelInfo(state.currentUser ? state.currentUser.xp : 0);
 
     el.innerHTML = `
-      <div class="results-container">
+      <div class="results-container results-animate">
         <div class="results-trophy">${trophy}</div>
         <h1 class="results-title ${titleClass}">${title}</h1>
         <p class="results-subtitle" style="color:var(--text-secondary); margin-bottom: var(--spacing-xl)">${subtitle}</p>
@@ -3381,7 +3381,10 @@ console.log('--- APP.JS LOADED ---');
   // ──── Profile ────
   function generateProfileHtml(user) {
     const initial = user.username.charAt(0).toUpperCase();
-    const winRate = user.totalGames > 0 ? Math.round((user.wins / user.totalGames) * 100) : 0;
+    const wins = user.wins || 0;
+    const losses = user.losses || 0;
+    const totalGames = user.totalGames || 0;
+    const winRate = totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0;
     const rating = Math.round(user.glicko_rating || 1500);
     const userRank = getRank(rating);
     const levelInfo = getLevelInfo(user.xp || 0);
@@ -3411,15 +3414,15 @@ console.log('--- APP.JS LOADED ---');
           <div class="stat-label">🏆 Рейтинг Glicko-2</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">${user.wins}</div>
+          <div class="stat-value">${wins}</div>
           <div class="stat-label">Побед</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">${user.losses}</div>
+          <div class="stat-value">${losses}</div>
           <div class="stat-label">Поражений</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">${user.totalGames}</div>
+          <div class="stat-value">${totalGames}</div>
           <div class="stat-label">Всего игр</div>
         </div>
         <div class="stat-card">
