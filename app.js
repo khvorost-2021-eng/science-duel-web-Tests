@@ -4286,7 +4286,7 @@ console.log('--- APP.JS LOADED ---');
     const oppRank = getRank(oppRating);
 
     el.innerHTML = `
-      <div class="results-container">
+      <div class="results-container results-animate">
         <div class="results-trophy">${trophy}</div>
         <div class="results-title">${title}</div>
         <div class="results-subtitle">${subtitle}</div>
