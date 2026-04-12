@@ -102,6 +102,18 @@ async function initDB() {
       )
     `);
 
+    // Solo records by difficulty
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS solo_records (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        mode VARCHAR(50) NOT NULL,
+        score INTEGER DEFAULT 0,
+        timestamp BIGINT NOT NULL,
+        UNIQUE(username, mode)
+      )
+    `);
+
     // Проверка/добавление новых колонок (миграции)
     const columns = [
       'bestSolo INTEGER DEFAULT 0',
@@ -294,9 +306,26 @@ async function addAchievement(username, achievementId) {
   `, [username, achievementId, Date.now()]);
 }
 
+async function getUserAchievements(username) {
+  const res = await pool.query('SELECT achievementId as achievement_id, timestamp FROM achievements WHERE LOWER(username) = LOWER($1)', [username]);
+  return res.rows;
+}
+
+async function getUserSoloRecords(username) {
+  const res = await pool.query('SELECT mode, score, timestamp FROM solo_records WHERE LOWER(username) = LOWER($1)', [username]);
+  return res.rows;
+}
+
 async function updateSoloRecord(username, difficulty, score) {
-  // In users table, bestSolo is a generic best, maybe we can add a specific table for difficulty records later, 
-  // but for now, we just update bestSolo if it's better.
+  await pool.query(`
+    INSERT INTO solo_records (username, mode, score, timestamp)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (username, mode) DO UPDATE SET 
+      score = CASE WHEN EXCLUDED.score > solo_records.score THEN EXCLUDED.score ELSE solo_records.score END,
+      timestamp = CASE WHEN EXCLUDED.score > solo_records.score THEN EXCLUDED.timestamp ELSE solo_records.timestamp END
+  `, [username, difficulty, score, Date.now()]);
+  
+  // Also keep the global bestSolo in users table for leaderboard
   const user = await getUser(username);
   if (user && score > (user.bestSolo || 0)) {
     await updateUserStats(username, { bestSolo: score });
@@ -323,6 +352,8 @@ module.exports = {
   hasSolvedDaily,
   markDailySolved,
   addAchievement,
+  getUserAchievements,
+  getUserSoloRecords,
   updateSoloRecord
 };
 
