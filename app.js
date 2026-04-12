@@ -2213,7 +2213,12 @@ console.log('--- APP.JS LOADED ---');
       const x = 2.71; // Test point
       const evalExpr = (expr) => {
         try {
-          return eval(expr.replace(/x/g, `(${x})`).replace(/\^/g, '**'));
+          // Security: only allow safe math characters
+          const safe = expr.replace(/x/g, `(${x})`).replace(/\^/g, '**');
+          if (!/^[\d\s\+\-\*\/\.\(\)\*]+$/.test(safe)) return NaN;
+          // Use Function constructor as safer eval alternative
+          // eslint-disable-next-line no-new-func
+          return new Function('return ' + safe)();
         } catch(e) { return NaN; }
       };
       
