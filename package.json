@@ -1,0 +1,22 @@
+{
+  "name": "sciduel",
+  "version": "1.0.0",
+  "description": "SciDuel — научная платформа с математическими дуэлями",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "glicko2-lite": "^5.0.0",
+    "socket.io": "^4.7.4",
+    "sqlite3": "5.1.7",
+    "pg": "^8.11.3",
+    "@supabase/supabase-js": "^2.39.7",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
