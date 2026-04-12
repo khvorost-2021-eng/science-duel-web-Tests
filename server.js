@@ -73,8 +73,8 @@ async function checkAchievements(username) {
 
   // Logic for different achievements
   if (user.wins >= 1) await check('first_win');
-  if (user.totalSolved >= 100) await check('scholar_100');
-  if (user.bestSolo >= 30) await check('storm_pro');
+  if ((user.totalSolved || user.totalsolved || 0) >= 100) await check('scholar_100');
+  if ((user.bestSolo || user.bestsolo || 0) >= 30) await check('storm_pro');
 
   // Multi-win streak logic (would need a column, but let's use match history)
   try {
@@ -406,9 +406,9 @@ async function endGame(roomCode) {
       const totalXpGain = resultXp + solvedXp;
 
       updatePromises.push(db.updateUserStats(player.name, {
-        totalSolved: (playerDb.totalSolved || 0) + player.score,
-        totalGames: (playerDb.totalGames || 0) + 1,
-        bestResult: Math.max(playerDb.bestResult || 0, player.score),
+        totalSolved: (playerDb.totalSolved || playerDb.totalsolved || 0) + player.score,
+        totalGames: (playerDb.totalGames || playerDb.totalgames || 0) + 1,
+        bestResult: Math.max(playerDb.bestResult || playerDb.bestresult || 0, player.score),
         wins: (playerDb.wins || 0) + (isWin ? 1 : 0),
         xp: (playerDb.xp || 0) + totalXpGain
       }));
@@ -1400,12 +1400,12 @@ io.on("connection", (socket) => {
           const score = room.players[0].score;
           db.getUser(username).then(async (user) => {
             if (user) {
-              const bestSolo = Math.max(user.bestSolo || 0, score);
+              const bestSolo = Math.max((user.bestSolo || user.bestsolo || 0), score);
               const xpGain = score * 5;
               try {
                 await db.updateSoloRecord(username, difficulty, score);
                 await db.updateUserStats(username, {
-                  totalSolved: user.totalSolved + score,
+                  totalSolved: (user.totalSolved || user.totalsolved || 0) + score,
                   bestSolo: bestSolo,
                   xp: (user.xp || 0) + xpGain
                 });

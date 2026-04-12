@@ -3388,7 +3388,9 @@ console.log('--- APP.JS LOADED ---');
     const initial = user.username.charAt(0).toUpperCase();
     const wins = user.wins || 0;
     const losses = user.losses || 0;
-    const totalGames = user.totalGames || 0;
+    const totalGames = user.totalGames || user.totalgames || 0;
+    const totalsolved = user.totalSolved || user.totalsolved || 0;
+    const bestresult = user.bestResult || user.bestresult || 0;
     const winRate = totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0;
     const rating = Math.round(user.glicko_rating || 1500);
     const userRank = getRank(rating);
@@ -3435,7 +3437,7 @@ console.log('--- APP.JS LOADED ---');
           <div class="stat-label">Винрейт</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">${user.totalSolved || 0}</div>
+          <div class="stat-value">${totalsolved}</div>
           <div class="stat-label">Решено задач</div>
         </div>
       </div>
@@ -3446,7 +3448,7 @@ console.log('--- APP.JS LOADED ---');
             <div class="record-item">
                <div class="record-icon">⚔️</div>
                <div class="record-info">
-                 <div class="record-value">${user.bestResult || 0}</div>
+                 <div class="record-value">${bestresult}</div>
                  <div class="record-label">Дуэль</div>
                </div>
             </div>
