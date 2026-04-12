@@ -451,11 +451,11 @@ console.log('--- APP.JS LOADED ---');
         <div class="daily-challenge-card ${solved ? 'solved' : ''}">
           <div class="daily-tag">ЕЖЕДНЕВНОЕ ИСПЫТАНИЕ</div>
           <h2 style="margin-bottom:12px">${solved ? '✅ Испытание пройдено!' : '🎯 Задача дня'}</h2>
-          <p style="color:var(--text-secondary); margin-bottom:24px;">
+          <p style="color:var(--text-secondary); margin-bottom: var(--spacing-lg);">
             ${solved ? 'Вы успешно решили сегодняшнюю задачу. Возвращайтесь завтра!' : 'Решите эту задачу первым, чтобы получить бонус к рейтингу!'}
           </p>
           
-          <div class="card" style="background:rgba(255,255,255,0.05); padding:20px; border-radius:12px; margin-bottom:24px;">
+          <div class="card" style="background:rgba(255,255,255,0.05); padding:20px; border-radius:12px; margin-bottom: var(--spacing-lg);">
             <p style="font-size:1.4rem; font-weight:700;">${challenge.question}</p>
           </div>
 
@@ -1503,7 +1503,7 @@ console.log('--- APP.JS LOADED ---');
         </div>
         <h1>${topicData.topic}</h1>
 
-        <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;">
+        <div style="display:flex; flex-wrap:wrap; gap: var(--spacing-lg); align-items:flex-start;">
           <div style="flex:1; min-width:320px; width: 100%;">
             <section class="theory-topic-card" style="border-top: 4px solid var(--accent-blue);">
               <h2 style="color: var(--accent-blue); display:flex; align-items:center; gap:8px;">
@@ -3137,7 +3137,7 @@ console.log('--- APP.JS LOADED ---');
             <input type="password" class="form-input" id="reg-password-confirm" placeholder="Повторите пароль">
             <div class="form-error" id="reg-confirm-error"></div>
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Зарегистрироваться</button>
+          <button type="submit" class="btn btn-primary btn-full" style="margin-top: var(--spacing-sm)">Зарегистрироваться</button>
         </form>
         <div class="form-footer">Уже есть аккаунт? <a id="switch-to-login">Войти</a></div>
       `;
@@ -3179,7 +3179,7 @@ console.log('--- APP.JS LOADED ---');
             <input type="password" class="form-input" id="login-password" placeholder="Ваш пароль">
             <div class="form-error" id="login-error"></div>
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Войти</button>
+          <button type="submit" class="btn btn-primary btn-full" style="margin-top: var(--spacing-sm)">Войти</button>
         </form>
         <div class="form-footer">Нет аккаунта? <a id="switch-to-register">Зарегистрироваться</a></div>
       `;
@@ -3437,7 +3437,7 @@ console.log('--- APP.JS LOADED ---');
         </div>
 
         <div class="time-selection" style="margin-bottom:32px">
-          <label style="display:block;margin-bottom:12px;font-weight:600;color:var(--text-secondary)">Время игры (секунд):</label>
+          <label style="display:block;margin-bottom: var(--spacing-md);font-weight:600;color:var(--text-secondary)">Время игры (секунд):</label>
           <div style="display:flex;gap:12px;justify-content:center">
             ${times.map(t => `
               <button class="time-btn ${t === (state.duration || 60) ? 'selected' : ''}" data-time="${t}">${t}</button>
@@ -3562,15 +3562,15 @@ console.log('--- APP.JS LOADED ---');
     const diffNames = { easy: '🌱 Лёгкий', medium: '🔥 Средний', hard: '💀 Сложный', algebra: '🧮 Алгебра', geometry: '📐 Геометрия' };
 
     el.innerHTML = `
-      <div class="lobby-container" style="max-width:1100px; margin:0 auto; padding:40px 24px; display:flex; gap:32px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:320px;">
-          <h1 style="margin-bottom:8px">🏠 Комната: <span class="gradient-text">${roomCode}</span></h1>
-          <p style="color:var(--text-secondary); margin-bottom:24px">Режим: ${diffNames[difficulty] || difficulty}</p>
+      <div class="lobby-container">
+        <div class="lobby-main">
+          <h1 style="margin-bottom: var(--spacing-xs);">🏠 Комната: <span class="gradient-text">${roomCode}</span></h1>
+          <p style="color:var(--text-secondary); margin-bottom: var(--spacing-lg);">Режим: ${diffNames[difficulty] || difficulty}</p>
           
-          <div class="lobby-players-list" style="display:grid; gap:12px; margin-bottom:32px">
-            <h3 style="font-size:1.1rem; color:var(--text-secondary); margin-bottom:8px">Участники (${players.length})</h3>
+          <div class="lobby-players-list">
+            <h3 style="font-size:1.1rem; color:var(--text-secondary); margin-bottom: var(--spacing-xs);">Участники (${players.length})</h3>
             ${players.map(p => `
-              <div class="user-list-item" style="background:rgba(255,255,255,0.05); padding:12px 16px; border-radius:12px; display:flex; align-items:center; gap:12px">
+              <div class="user-list-item">
                 <div class="user-avatar" style="width:32px; height:32px; font-size:14px">${p.name.charAt(0).toUpperCase()}</div>
                 <span style="font-weight:600">${p.name}</span>
                 ${p.name === state.myName ? '<span style="font-size:0.7rem; background:var(--accent-purple); padding:2px 8px; border-radius:10px">ВЫ</span>' : ''}
@@ -3578,7 +3578,7 @@ console.log('--- APP.JS LOADED ---');
             `).join('')}
           </div>
 
-          <div style="display:flex; gap:12px; flex-wrap:wrap">
+          <div class="l-flex" style="flex-wrap:wrap">
             ${players[0]?.name === state.myName ? `
               <button class="btn btn-primary btn-lg" id="lobby-start-btn">🚀 Начать игру</button>
             ` : `
@@ -3591,8 +3591,8 @@ console.log('--- APP.JS LOADED ---');
           </div>
         </div>
 
-        <div style="width:100%; max-width:400px; min-width:300px;">
-          <h3 style="margin-bottom:12px">💬 Чат комнаты</h3>
+        <div class="lobby-sidebar">
+          <h3 style="margin-bottom: var(--spacing-md);">💬 Чат комнаты</h3>
           <div class="chat-container">
             <div class="chat-messages" id="chat-messages">
                ${chat.map(m => `
@@ -4977,8 +4977,8 @@ console.log('--- APP.JS LOADED ---');
     if (grid) {
       grid.innerHTML = Array(6).fill(`
         <div class="community-task-card skeleton">
-          <div style="height:20px; width:60%; margin-bottom:12px; background:rgba(255,255,255,0.1); border-radius:4px"></div>
-          <div style="height:24px; width:90%; margin-bottom:12px; background:rgba(255,255,255,0.1); border-radius:4px"></div>
+          <div style="height:20px; width:60%; margin-bottom: var(--spacing-md); background:rgba(255,255,255,0.1); border-radius:4px"></div>
+          <div style="height:24px; width:90%; margin-bottom: var(--spacing-md); background:rgba(255,255,255,0.1); border-radius:4px"></div>
           <div style="height:60px; width:100%; background:rgba(255,255,255,0.05); border-radius:4px"></div>
         </div>
       `).join('');
