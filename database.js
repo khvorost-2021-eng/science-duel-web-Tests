@@ -334,15 +334,7 @@ async function recordTournamentMatchResult({ matchId, winner, score_p1, score_p2
   );
 
   // Advance winner to next round
-    await pool.query(
-      `UPDATE tournaments SET status = 'finished', finished_at = $1 WHERE id = $2`,
-      [Date.now(), tournamentId]
-    );
-    await pool.query(
-      `UPDATE tournament_players SET status = 'winner' WHERE tournament_id = $1 AND username = $2`,
-      [tournamentId, winner]
-    );
-  }
+  await advanceWinner(match.tournament_id, match.round, match.match_number, winner);
 }
 
 async function updateTournamentMatchRoom(matchId, roomCode) {
