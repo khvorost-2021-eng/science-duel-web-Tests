@@ -310,7 +310,7 @@
       $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
-      $('#nav-search-btn').addEventListener('click', () => { renderMatchmaking(); navigateTo('matchmaking'); });
+      $('#nav-search-btn').addEventListener('click', () => openPlayerSearch());
       $('#nav-profile-btn').addEventListener('click', () => {
         renderProfile();
         navigateTo('profile');
@@ -340,7 +340,7 @@
       $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
-      $('#nav-search-btn').addEventListener('click', () => { renderMatchmaking(); navigateTo('matchmaking'); });
+      $('#nav-search-btn').addEventListener('click', () => openPlayerSearch());
       $('#nav-login-btn').addEventListener('click', () => openModal('login'));
       $('#nav-register-btn').addEventListener('click', () => openModal('register'));
     }
@@ -2423,13 +2423,14 @@
       if (!result || !result.ok) { navigateTo('home'); return; }
       const user = result.user;
       state.currentUser = user;
-      
+
       socket.emit('get-best-results', { username: user.username }, (resBest) => {
-        const records = resBest.ok ? resBest.records : [];
+        const records = (resBest && resBest.ok) ? resBest.records : [];
         const el = $('#screen-profile');
+        if (!el) return;
+
         const initial = user.username.charAt(0).toUpperCase();
         const winRate = user.totalGames > 0 ? Math.round((user.wins / user.totalGames) * 100) : 0;
-    
         const rating = Math.round(user.glicko_rating || 1500);
         const userRank = getRank(rating);
 
@@ -2450,77 +2451,79 @@
             <div class="stats-grid">
               <div class="stat-card stat-card-rating">
                 <div class="stat-value" style="color: var(--accent-blue)">${rating}</div>
-                <div class="stat-label">🏆 Рейтинг</div>
+                <div class="stat-label">\ud83c\udfc6 \u0420\u0435\u0439\u0442\u0438\u043d\u0433</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value">${user.wins}</div>
-                <div class="stat-label">Побед</div>
+                <div class="stat-value">${user.wins || 0}</div>
+                <div class="stat-label">\u041f\u043e\u0431\u0435\u0434</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value">${user.losses}</div>
-                <div class="stat-label">Поражений</div>
+                <div class="stat-value">${user.losses || 0}</div>
+                <div class="stat-label">\u041f\u043e\u0440\u0430\u0436\u0435\u043d\u0438\u0439</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value">${user.totalGames}</div>
-                <div class="stat-label">Всего игр</div>
+                <div class="stat-value">${user.totalGames || 0}</div>
+                <div class="stat-label">\u0412\u0441\u0435\u0433\u043e \u0438\u0433\u0440</div>
               </div>
               <div class="stat-card">
                 <div class="stat-value">${winRate}%</div>
-                <div class="stat-label">Винрейт</div>
+                <div class="stat-label">\u0412\u0438\u043d\u0440\u0435\u0439\u0442</div>
               </div>
               <div class="stat-card">
                 <div class="stat-value">${user.totalSolved || 0}</div>
-                <div class="stat-label">Решено задач</div>
+                <div class="stat-label">\u0420\u0435\u0448\u0435\u043d\u043e \u0437\u0430\u0434\u0430\u0447</div>
               </div>
             </div>
 
             <div class="best-results-section">
-               <h2 style="margin-bottom:16px; font-size:1.4rem">🌟 Личные рекорды</h2>
-               <div class="records-grid-v2">
-                  <div class="record-item-v2">
-                     <span class="rec-label">Арифметика:</span>
-                     <span class="rec-val">⚔️ ${findBest('easy')} | ⚡ ${findBest('solo') || findBest('basic')}</span>
-                  </div>
-                  <div class="record-item-v2">
-                     <span class="rec-label">Алгебра:</span>
-                     <span class="rec-val">⚔️ ${findBest('algebra')}</span>
-                  </div>
-                  <div class="record-item-v2">
-                     <span class="rec-label">Геометрия:</span>
-                     <span class="rec-val">⚔️ ${findBest('geometry')}</span>
-                  </div>
-                  <div class="record-item-v2">
-                     <span class="rec-label">Логика:</span>
-                     <span class="rec-val">⚔️ ${findBest('logic')}</span>
-                  </div>
-               </div>
+              <h2 style="margin-bottom:16px; font-size:1.4rem">\ud83c\udf1f \u041b\u0438\u0447\u043d\u044b\u0435 \u0440\u0435\u043a\u043e\u0440\u0434\u044b</h2>
+              <div class="records-grid-v2">
+                <div class="record-item-v2">
+                  <span class="rec-label">\u0410\u0440\u0438\u0444\u043c\u0435\u0442\u0438\u043a\u0430</span>
+                  <span class="rec-val">\u2694\ufe0f ${findBest('easy') || findBest('basic')} | \u26a1 ${findBest('solo')}</span>
+                </div>
+                <div class="record-item-v2">
+                  <span class="rec-label">\u0410\u043b\u0433\u0435\u0431\u0440\u0430</span>
+                  <span class="rec-val">\u2694\ufe0f ${findBest('algebra')}</span>
+                </div>
+                <div class="record-item-v2">
+                  <span class="rec-label">\u0413\u0435\u043e\u043c\u0435\u0442\u0440\u0438\u044f</span>
+                  <span class="rec-val">\u2694\ufe0f ${findBest('geometry')}</span>
+                </div>
+                <div class="record-item-v2">
+                  <span class="rec-label">\u041b\u043e\u0433\u0438\u043a\u0430</span>
+                  <span class="rec-val">\u2694\ufe0f ${findBest('logic')}</span>
+                </div>
+              </div>
             </div>
 
             <div class="match-history-section" id="match-history-section">
-              <h2 style="margin-bottom:16px; font-size:1.4rem">📜 История матчей</h2>
+              <h2 style="margin-bottom:16px; font-size:1.4rem">\ud83d\udcdc \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043c\u0430\u0442\u0447\u0435\u0439</h2>
               <div id="match-history-list" class="match-history-list">
-                <div style="text-align:center;padding:24px;color:var(--text-muted)">Загрузка...</div>
+                <div style="text-align:center;padding:24px;color:var(--text-muted)">\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...</div>
               </div>
             </div>
 
             <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-              <button class="btn btn-primary btn-lg" id="profile-duel-btn">🏠 Создать комнату</button>
-              <button class="btn btn-secondary btn-lg" id="profile-search-btn">🔍 Найти соперника</button>
-              <button class="btn btn-accent btn-lg" id="profile-solo-btn">⚡ Штурм</button>
-              <button class="btn btn-ghost btn-lg" id="profile-back-btn">← На главную</button>
+              <button class="btn btn-primary btn-lg" id="profile-duel-btn">\ud83c\udfe0 \u0421\u043e\u0437\u0434\u0430\u0442\u044c \u043a\u043e\u043c\u043d\u0430\u0442\u0443</button>
+              <button class="btn btn-secondary btn-lg" id="profile-search-btn">\ud83d\udd0d \u041d\u0430\u0439\u0442\u0438 \u0441\u043e\u043f\u0435\u0440\u043d\u0438\u043a\u0430</button>
+              <button class="btn btn-accent btn-lg" id="profile-solo-btn">\u26a1 \u0428\u0442\u0443\u0440\u043c</button>
+              <button class="btn btn-ghost btn-lg" id="profile-back-btn">\u2190 \u041d\u0430 \u0433\u043b\u0430\u0432\u043d\u0443\u044e</button>
             </div>
           </div>
         `;
 
         loadMatchHistory(user.username);
-        $('#profile-duel-btn').addEventListener('click', () => navigateTo('duel-setup'));
+        $('#profile-duel-btn').addEventListener('click', () => { renderDuelSetup(); navigateTo('duel-setup'); });
         $('#profile-search-btn').addEventListener('click', () => { renderMatchmaking(); navigateTo('matchmaking'); });
-        $('#profile-solo-btn').addEventListener('click', () => navigateTo('solo-setup'));
+        $('#profile-solo-btn').addEventListener('click', () => { renderSoloSetup('blitz'); navigateTo('solo-setup'); });
         $('#profile-back-btn').addEventListener('click', () => navigateTo('home'));
+      });
     });
   }
 
   function loadMatchHistory(username) {
+
     socket.emit('get-match-history', { username, limit: 10 }, (result) => {
       const listEl = $('#match-history-list');
       if (!listEl) return;
@@ -2549,6 +2552,119 @@
           </div>
         `;
       }).join('');
+    });
+  }
+
+  // ──── Player Search Modal ────
+  function openPlayerSearch() {
+    // Remove any existing modal
+    const existing = document.getElementById('player-search-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'player-search-modal';
+    modal.className = 'player-search-overlay';
+    modal.innerHTML = `
+      <div class="player-search-card">
+        <div class="player-search-header">
+          <h3>🔍 Поиск игроков</h3>
+          <button class="ps-close" id="ps-close-btn">✕</button>
+        </div>
+        <div class="player-search-input-row">
+          <input class="form-input ps-input" id="ps-input" type="text" placeholder="Введите никнейм (минимум 2 символа)..." autocomplete="off" />
+          <button class="btn btn-primary" id="ps-search-btn">Найти</button>
+        </div>
+        <div id="ps-results" class="ps-results-list">
+          <p class="ps-hint">Начните вводить имя игрока</p>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const input = modal.querySelector('#ps-input');
+    const resultsEl = modal.querySelector('#ps-results');
+    let searchTimeout;
+
+    function doSearch() {
+      const q = input.value.trim();
+      if (q.length < 2) {
+        resultsEl.innerHTML = '<p class="ps-hint">Введите минимум 2 символа</p>';
+        return;
+      }
+      resultsEl.innerHTML = '<p class="ps-hint">Поиск...</p>';
+      socket.emit('search-players', { query: q }, (res) => {
+        if (!res.ok || !res.players || res.players.length === 0) {
+          resultsEl.innerHTML = '<p class="ps-hint">Игроки не найдены</p>';
+          return;
+        }
+        resultsEl.innerHTML = res.players.map(p => {
+          const rank = getRank(p.glicko_rating || 1500);
+          const initial = p.username.charAt(0).toUpperCase();
+          const winRate = p.totalgames > 0 ? Math.round((p.wins / p.totalgames) * 100) : 0;
+          return `
+            <div class="ps-player-row" data-username="${p.username}">
+              <div class="ps-avatar ${rank.class}">${initial}</div>
+              <div class="ps-info">
+                <div class="ps-name">${p.username} ${rank.icon}</div>
+                <div class="ps-stats">${rank.title} • ${Math.round(p.glicko_rating || 1500)} рейт. • ${p.wins || 0}W / ${p.losses || 0}L</div>
+              </div>
+              <button class="btn btn-primary ps-profile-btn" data-username="${p.username}">Профиль</button>
+            </div>
+          `;
+        }).join('');
+
+        // Bind profile buttons
+        modal.querySelectorAll('.ps-profile-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const uname = btn.dataset.username;
+            modal.remove();
+            showUserProfile(uname);
+          });
+        });
+      });
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(doSearch, 400);
+    });
+    modal.querySelector('#ps-search-btn').addEventListener('click', doSearch);
+    modal.querySelector('#ps-close-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    // Focus input
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function showUserProfile(username) {
+    socket.emit('get-user', { username }, (result) => {
+      if (!result || !result.ok) { showToast('Игрок не найден', 'error'); return; }
+      const user = result.user;
+      const rank = getRank(user.glicko_rating || 1500);
+      const initial = user.username.charAt(0).toUpperCase();
+      const winRate = user.totalGames > 0 ? Math.round((user.wins / user.totalGames) * 100) : 0;
+
+      // Reuse the existing modal overlay
+      const overlay = $('#modal-overlay');
+      const modalEl = $('#modal');
+      if (!overlay || !modalEl) return;
+
+      modalEl.innerHTML = `
+        <div style="text-align:center; padding: 8px 0 0;">
+          <button class="modal-close" id="modal-close-btn" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer">✕</button>
+          <div class="profile-avatar ${rank.class}" style="width:72px;height:72px;font-size:1.8rem;margin:0 auto 12px;">${initial}</div>
+          <h2 style="margin-bottom:4px">${user.username} ${rank.icon}</h2>
+          <p style="color:var(--accent-purple);font-weight:600;margin-bottom:20px">${rank.title}</p>
+          <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);gap:12px;">
+            <div class="stat-card"><div class="stat-value">${Math.round(user.glicko_rating || 1500)}</div><div class="stat-label">Рейтинг</div></div>
+            <div class="stat-card"><div class="stat-value">${user.wins || 0}</div><div class="stat-label">Победы</div></div>
+            <div class="stat-card"><div class="stat-value">${winRate}%</div><div class="stat-label">Винрейт</div></div>
+          </div>
+        </div>
+      `;
+      overlay.classList.add('active');
+      $('#modal-close-btn').addEventListener('click', () => overlay.classList.remove('active'));
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('active'); });
     });
   }
 

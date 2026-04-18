@@ -438,6 +438,19 @@ io.on("connection", (socket) => {
     } catch (e) { callback({ ok: false }); }
   });
 
+  socket.on('search-players', async (data, callback) => {
+    try {
+      const query = (data && data.query || '').trim();
+      if (query.length < 2) return callback({ ok: true, players: [] });
+      const res = await db.pool.query(
+        `SELECT username, wins, losses, totalGames, glicko_rating FROM users
+         WHERE LOWER(username) LIKE LOWER($1) LIMIT 8`,
+        [`%${query}%`]
+      );
+      callback({ ok: true, players: res.rows });
+    } catch (e) { callback({ ok: false, players: [] }); }
+  });
+
   // Create a room
   socket.on("create-room", (data) => {
     const code = generateRoomCode();
