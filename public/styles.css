@@ -225,7 +225,7 @@ body::before {
   justify-content: space-evenly;
   gap: 16px;
   flex: 1;
-  max-width: 1200px;
+  max-width: none;
   margin-left: 32px;
 }
 
