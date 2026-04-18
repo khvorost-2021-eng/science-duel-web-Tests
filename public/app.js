@@ -167,10 +167,47 @@
       gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
       osc.start(t);
       osc.stop(t + 0.2);
-    } else if (type === 'found') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(440, t);
       osc.frequency.setValueAtTime(660, t + 0.1);
+      gainNode.gain.setValueAtTime(0.1, t);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    } else if (type === 'win') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(400, t);
+      osc.frequency.setValueAtTime(500, t + 0.1);
+      osc.frequency.setValueAtTime(600, t + 0.2);
+      osc.frequency.setValueAtTime(800, t + 0.3);
+      gainNode.gain.setValueAtTime(0.3, t);
+      gainNode.gain.linearRampToValueAtTime(0.01, t + 0.6);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    } else if (type === 'loss') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(300, t);
+      osc.frequency.setValueAtTime(250, t + 0.2);
+      osc.frequency.setValueAtTime(200, t + 0.4);
+      gainNode.gain.setValueAtTime(0.3, t);
+      gainNode.gain.linearRampToValueAtTime(0.01, t + 0.6);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    }
+  };
+
+  function setCurrentUser(user) {
+    state.currentUser = user;
+    if (user) {
+      localStorage.setItem('sciduel_current', user.username);
+      socket.emit('set-user', { username: user.username });
+      fetchDailyChallenge();
+    } else {
+      localStorage.removeItem('sciduel_current');
+      $('#daily-challenge-form').style.display = 'none';
+      $('#daily-challenge-text').textContent = 'Пожалуйста, авторизуйтесь, чтобы увидеть олимпиадную задачу для вашего класса.';
+      $('#daily-challenge-result').style.display = 'none';
+    }
+    updateNavbar();
+  }
   function fetchDailyChallenge() {
     if (!state.currentUser || !state.currentUser.grade) return;
     socket.emit('get-daily-challenge', { grade: state.currentUser.grade }, (res) => {
