@@ -222,10 +222,11 @@ body::before {
 .navbar-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 20px;
+  justify-content: space-evenly;
+  gap: 16px;
   flex: 1;
   max-width: 1200px;
+  margin-left: 32px;
 }
 
 .navbar-user {
