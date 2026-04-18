@@ -466,18 +466,37 @@
       initNavSearch();
     } else {
       actionsEl.innerHTML = `
-        <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
-        <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
-        <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
-        <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
-        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
-        <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
-        <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
-        <button class="btn btn-ghost" id="nav-tournaments-btn">🏅 Турниры</button>
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-btn">🎯 Игра</button>
+          <div class="nav-dropdown-content">
+            <button class="nav-dropdown-item" id="nav-practice-btn">📝 Практика штурма</button>
+            <button class="nav-dropdown-item" id="nav-bots-btn">🤖 Игра с ботами</button>
+            <button class="nav-dropdown-item" id="nav-tournaments-btn">🏅 Турниры</button>
+          </div>
+        </div>
+        
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-btn">📚 База знаний</button>
+          <div class="nav-dropdown-content">
+            <button class="nav-dropdown-item" id="nav-theory-btn">📖 Теория</button>
+            <button class="nav-dropdown-item" id="nav-rules-btn">📋 Правила</button>
+          </div>
+        </div>
+        
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-btn">🌐 Сообщество</button>
+          <div class="nav-dropdown-content">
+            <button class="nav-dropdown-item" id="nav-leaderboard-btn">🏆 Рейтинг игроков</button>
+            <button class="nav-dropdown-item" id="nav-community-btn">🔵 Телеграм-канал</button>
+          </div>
+        </div>
+        
         <div class="nav-search-wrap" id="nav-search-wrap">
-          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
+          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Искать игрока..." autocomplete="off" />
           <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
         </div>
+
+        <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
         <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
         <button class="btn btn-primary" id="nav-register-btn">Регистрация</button>
       `;
