@@ -136,17 +136,8 @@ async function initDB() {
         PRIMARY KEY(user_id, grade)
       )
     `);
-    console.log('[DB] Ratings table initialized');
-
-    try {
-      const checkRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='daily_challenges' AND column_name='grade'");
-      if (checkRes.rowCount === 0) {
-         await client.query("DROP TABLE IF EXISTS daily_challenges CASCADE");
-      }
-    } catch(e) {}
-
     await client.query(`
-      CREATE TABLE IF NOT EXISTS daily_challenges (
+      CREATE TABLE IF NOT EXISTS daily_challenges_v2 (
         grade INTEGER PRIMARY KEY,
         text TEXT,
         answer TEXT,
@@ -396,14 +387,14 @@ async function getLeaderboardByGrade(grade) {
 
 async function setDailyChallenge(grade, text, answer) {
   await pool.query(`
-    INSERT INTO daily_challenges (grade, text, answer, updated_at)
+    INSERT INTO daily_challenges_v2 (grade, text, answer, updated_at)
     VALUES ($1, $2, $3, $4)
     ON CONFLICT (grade) DO UPDATE SET text = EXCLUDED.text, answer = EXCLUDED.answer, updated_at = EXCLUDED.updated_at
   `, [grade, text, answer, Date.now()]);
 }
 
 async function getDailyChallenge(grade) {
-  const res = await pool.query('SELECT text, answer FROM daily_challenges WHERE grade = $1', [grade]);
+  const res = await pool.query('SELECT text, answer FROM daily_challenges_v2 WHERE grade = $1', [grade]);
   return res.rows[0];
 }
 
