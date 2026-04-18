@@ -55,9 +55,22 @@
       </div>
     </div>
 
+    <!-- Daily Challenge Section -->
+    <div class="daily-challenge-section" style="margin-top: 40px;">
+      <h2 style="color:var(--text);margin-bottom:20px;">🌟 Олимпиадная задача дня</h2>
+      <div id="daily-challenge-card" style="background:var(--bg-glass); border:1px solid var(--border-glass); border-radius:16px; padding:24px; text-align:center;">
+        <p id="daily-challenge-text" style="font-size:1.1rem; line-height:1.6; margin-bottom:20px;">Авторизуйтесь, чтобы увидеть задачу дня для вашего класса.</p>
+        <div id="daily-challenge-form" style="display:none; gap:12px; justify-content:center; align-items:center;">
+          <input type="text" id="daily-challenge-input" class="form-input" placeholder="Ваш ответ..." style="max-width:200px;">
+          <button id="daily-challenge-submit" class="btn btn-primary">Ответить</button>
+        </div>
+        <p id="daily-challenge-result" style="margin-top:16px; font-weight:bold; display:none;"></p>
+      </div>
+    </div>
+
     <!-- Quotes Section -->
     <div class="quotes-section">
-      <h2>💡 Мудрость великих учёных</h2>
+      <h2 style="margin-top:40px;">💡 Мудрость великих учёных</h2>
       <div class="quote-card">
         <p class="quote-text" id="quote-text" style="transition: all 0.4s ease">
           Воображение важнее знания. Знание ограничено, тогда как воображение охватывает целый мир
@@ -488,6 +501,24 @@
           <option value="hard">Сложный</option>
         </select>
         <button class="btn btn-primary" id="admin-create-btn" style="width:100%">Создать турнир</button>
+      </div>
+
+      <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px;margin-bottom:24px">
+        <h2 style="margin-bottom:16px">🌟 Назначить Ежедневный Челлендж</h2>
+        <div style="display:flex;gap:12px;margin-bottom:14px">
+          <select id="admin-dc-grade" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);outline:none;">
+            <option value="5">5 класс</option>
+            <option value="6">6 класс</option>
+            <option value="7">7 класс</option>
+            <option value="8">8 класс</option>
+            <option value="9">9 класс</option>
+            <option value="10">10 класс</option>
+            <option value="11">11 класс</option>
+          </select>
+        </div>
+        <textarea id="admin-dc-text" placeholder="Текст олимпиадной задачи (можно с формулами LaTeX)..." style="width:100%;height:100px;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;resize:vertical;"></textarea>
+        <input id="admin-dc-answer" type="text" placeholder="Корректный ответ" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
+        <button class="btn btn-primary" id="admin-dc-btn" style="width:100%">Опубликовать задачу</button>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:24px;">

@@ -278,22 +278,35 @@ async function endGame(roomCode) {
   let p1Db = p1 ? await db.getUser(p1.name) : null;
   let p2Db = !isSolo && p2 ? await db.getUser(p2.name) : null;
 
+  let p1RatingInfo = p1Db && p1Db.grade ? await db.getRatingForGrade(p1Db.id, p1Db.grade) : { rating: 1500, rd: 350, volatility: 0.06 };
+  let p2RatingInfo = p2Db && p2Db.grade ? await db.getRatingForGrade(p2Db.id, p2Db.grade) : { rating: 1500, rd: 350, volatility: 0.06 };
+
   let p1RatingDelta = 0;
   let p2RatingDelta = 0;
 
-  if (!isSolo && room.isRanked) {
-    if (p1.score > p2.score) {
-      p1RatingDelta = 25; p2RatingDelta = -25;
-    } else if (p2.score > p1.score) {
-      p1RatingDelta = -25; p2RatingDelta = 25;
-    }
+  if (!isSolo && room.isRanked && p1Db && p2Db) {
+    let p1ScoreMath = p1.score > p2.score ? 1 : (p1.score < p2.score ? 0 : 0.5);
+    let p2ScoreMath = 1 - p1ScoreMath;
+    
+    const newP1 = glicko2(p1RatingInfo.rating, p1RatingInfo.rd, p1RatingInfo.volatility, [[p2RatingInfo.rating, p2RatingInfo.rd, p1ScoreMath]]);
+    const newP2 = glicko2(p2RatingInfo.rating, p2RatingInfo.rd, p2RatingInfo.volatility, [[p1RatingInfo.rating, p1RatingInfo.rd, p2ScoreMath]]);
+    
+    p1RatingDelta = newP1.rating - p1RatingInfo.rating;
+    p2RatingDelta = newP2.rating - p2RatingInfo.rating;
+
+    // Async update to DB rating specific to grade
+    if (p1Db.grade) await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility);
+    if (p2Db.grade) await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility);
+    
+    p1RatingInfo = newP1;
+    p2RatingInfo = newP2;
   }
 
   const payload = {
     isSolo,
     isRanked: room.isRanked,
-    player1: p1 ? { name: p1.name, score: p1.score, ratingDelta: p1RatingDelta, rating: p1Db ? p1Db.glicko_rating : 1500 } : null,
-    player2: !isSolo ? { name: p2.name, score: p2.score, ratingDelta: p2RatingDelta, rating: p2Db ? p2Db.glicko_rating : 1500 } : null,
+    player1: p1 ? { name: p1.name, score: p1.score, ratingDelta: p1RatingDelta, rating: p1RatingInfo.rating } : null,
+    player2: !isSolo ? { name: p2.name, score: p2.score, ratingDelta: p2RatingDelta, rating: p2RatingInfo.rating } : null,
   };
 
   if (p1Db) {
@@ -306,8 +319,7 @@ async function endGame(roomCode) {
 
     const statsUpdate = {
       totalSolved: (p1Db.totalSolved || 0) + p1.score,
-      totalGames:  (p1Db.totalGames  || 0) + 1,
-      glicko_rating: (p1Db.glicko_rating || 1500) + p1RatingDelta,
+      totalGames:  (p1Db.totalGames  || 0) + 1
     };
 
     if (isSolo) {
@@ -339,7 +351,6 @@ async function endGame(roomCode) {
       duelGames:     (p2Db.duelGames    || 0) + 1,
       wins:          (p2Db.wins         || 0) + (isWin  ? 1 : 0),
       losses:        (p2Db.losses       || 0) + (isLoss ? 1 : 0),
-      glicko_rating: (p2Db.glicko_rating || 1500) + p2RatingDelta,
       bestResult:    Math.max(p2Db.bestResult || 0, p2.score)
     }));
     updatePromises.push(db.recordMatchResult({
@@ -402,7 +413,8 @@ io.on("connection", (socket) => {
       users.set(socket.id, {
         username: user ? user.username : "Гость",
         socketId: socket.id,
-        role: user ? user.role : 'user'
+        role: user ? user.role : 'user',
+        grade: user ? user.grade : null
       });
     } catch {
       users.set(socket.id, { username: "Гость", socketId: socket.id, role: 'user' });
@@ -410,16 +422,24 @@ io.on("connection", (socket) => {
   });
 
   socket.on('register', async (data, callback) => {
-    const { username, password } = data;
+    const { username, password, grade } = data;
     if (!username || username.length < 2) return callback({ ok: false, msg: 'Имя не менее 2 симв.' });
     if (!password || password.length < 4) return callback({ ok: false, msg: 'Пароль не менее 4 симв.' });
+    if (!grade || grade < 5 || grade > 11) return callback({ ok: false, msg: 'Выберите корректный класс (5-11).' });
     try {
       const existing = await db.getUser(username);
       if (existing) return callback({ ok: false, msg: 'Пользователь уже существует' });
-      await db.createUser({ username, password: hashPassword(password) });
+      await db.createUser({ username, password: hashPassword(password), grade });
       const newUser = await db.getUser(username);
-      users.set(socket.id, { username: newUser.username, socketId: socket.id, role: newUser.role });
+      users.set(socket.id, { username: newUser.username, socketId: socket.id, role: newUser.role, grade: newUser.grade });
       const { password: _, ...userNoPw } = newUser;
+      
+      // Inject correct rating for UI
+      const userRating = await db.getRatingForGrade(newUser.id, newUser.grade);
+      userNoPw.glicko_rating = userRating.rating;
+      userNoPw.glicko_rd = userRating.rd;
+      userNoPw.glicko_vol = userRating.volatility;
+      
       callback({ ok: true, user: userNoPw });
     } catch (e) {
       console.error(e);
@@ -442,10 +462,18 @@ io.on("connection", (socket) => {
         return callback({ ok: false, msg: 'Неверный пароль' });
       }
       
-      users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role });
+      users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role, grade: user.grade });
       const { password: _, ...userNoPw } = user;
+      
+      if (user.grade) {
+          const userRating = await db.getRatingForGrade(user.id, user.grade);
+          userNoPw.glicko_rating = userRating.rating;
+          userNoPw.glicko_rd = userRating.rd;
+          userNoPw.glicko_vol = userRating.volatility;
+      }
       callback({ ok: true, user: userNoPw });
     } catch (e) {
+      console.error(e);
       callback({ ok: false, msg: 'Ошибка сервера' });
     }
   });
@@ -454,8 +482,14 @@ io.on("connection", (socket) => {
     try {
       const user = await db.getUser(data.username);
       if (user) {
-        users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role });
+        users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role, grade: user.grade });
         const { password: _, ...userNoPw } = user;
+        if (user.grade) {
+          const userRating = await db.getRatingForGrade(user.id, user.grade);
+          userNoPw.glicko_rating = userRating.rating;
+          userNoPw.glicko_rd = userRating.rd;
+          userNoPw.glicko_vol = userRating.volatility;
+        }
         callback({ ok: true, user: userNoPw });
       } else {
         callback({ ok: false });
@@ -465,10 +499,29 @@ io.on("connection", (socket) => {
 
   socket.on('get-leaderboard', async (data, callback) => {
     try {
-      const filter = data && data.filter ? data.filter : 'all';
-      const leaderboard = await db.getFilteredLeaderboard(filter, 10);
+      const grade = data && data.grade ? parseInt(data.grade) : 5;
+      const leaderboard = await db.getLeaderboardByGrade(grade);
       callback({ ok: true, leaderboard });
     } catch (e) { callback({ ok: false }); }
+  });
+
+  socket.on('get-daily-challenge', async (data, callback) => {
+    try {
+      const grade = data && data.grade ? parseInt(data.grade) : 5;
+      const challenge = await db.getDailyChallenge(grade);
+      callback({ ok: true, challenge });
+    } catch (e) { callback({ ok: false }); }
+  });
+
+  socket.on('admin-set-challenge', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { grade, text, answer } = data;
+      if (!grade || !text || !answer) return callback({ ok: false, msg: 'Все поля обязательны' });
+      await db.setDailyChallenge(grade, text, answer);
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
   });
 
   socket.on('get-match-history', async (data, callback) => {
@@ -783,14 +836,16 @@ io.on("connection", (socket) => {
       socketId: socket.id,
       name: data.playerName || "Игрок",
       difficulty: data.difficulty || "easy",
-      rating: playerRating
+      rating: playerRating,
+      grade: data.grade || 5
     };
 
-    // Find someone in queue with same difficulty and similar rating (within 250)
+    // Find someone in queue with same difficulty, same grade, and similar rating
     const matchIndex = waitingQueue.findIndex(
       (q) => q.difficulty === playerInfo.difficulty && 
-             Math.abs(q.rating - playerInfo.rating) < 250 &&
-             q.socketId !== socket.id,
+             q.grade === playerInfo.grade &&
+             Math.abs(q.rating - playerInfo.rating) < 400 &&
+             q.socketId !== socket.id
     );
 
     if (matchIndex >= 0) {

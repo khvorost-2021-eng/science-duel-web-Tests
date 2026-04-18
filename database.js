@@ -56,6 +56,7 @@ async function initDB() {
     // Проверка/добавление новых колонок (миграции)
     const columns = [
       "role VARCHAR(50) DEFAULT 'user'",
+      "grade INTEGER DEFAULT 5",
       'bestSolo INTEGER DEFAULT 0',
       'bestResult INTEGER DEFAULT 0',
       'duelGames INTEGER DEFAULT 0',
@@ -122,6 +123,30 @@ async function initDB() {
       )
     `);
     console.log('[DB] Tournament tables ready');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ratings (
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        grade INTEGER,
+        rating REAL NOT NULL,
+        rd REAL NOT NULL,
+        volatility REAL NOT NULL,
+        matches_played INTEGER DEFAULT 0,
+        updated_at BIGINT,
+        PRIMARY KEY(user_id, grade)
+      )
+    `);
+    console.log('[DB] Ratings table initialized');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS daily_challenges (
+        grade INTEGER PRIMARY KEY,
+        text TEXT,
+        answer TEXT,
+        updated_at BIGINT
+      )
+    `);
+    console.log('[DB] Daily challenges table initialized');
 
   } finally {
     client.release();
@@ -293,7 +318,7 @@ async function updateTournamentMatchRoom(matchId, roomCode) {
 // ── EXISTING FUNCTIONS ─────────────────────────────────────────────────
 
 async function getAllUsers() {
-  const res = await pool.query('SELECT id, username, role, created, wins, duelGames, soloGames FROM users ORDER BY created DESC');
+  const res = await pool.query('SELECT id, username, role, grade, created, wins, duelGames, soloGames FROM users ORDER BY created DESC');
   return res.rows;
 }
 
@@ -302,18 +327,74 @@ async function updateUserRole(username, role) {
   return res.rows[0];
 }
 
-async function getUser(username) {
-  const res = await pool.query('SELECT * FROM users WHERE LOWER(username) = LOWER($1)', [username]);
+async function updateGrade(username, grade) {
+  const res = await pool.query('UPDATE users SET grade = $1 WHERE LOWER(username) = LOWER($2) RETURNING grade', [grade, username]);
   return res.rows[0];
 }
 
 async function createUser(user) {
   const res = await pool.query(`
-    INSERT INTO users (username, password, created)
-    VALUES ($1, $2, $3) RETURNING id
-  `, [user.username, user.password, Date.now()]);
+    INSERT INTO users (username, password, grade, created)
+    VALUES ($1, $2, $3, $4) RETURNING id
+  `, [user.username, user.password, user.grade || 5, Date.now()]);
   console.log(`[DB] User created: ${user.username} (ID: ${res.rows[0].id})`);
+  
+  // init ratings table
+  await getRatingForGrade(res.rows[0].id, user.grade || 5);
   return res.rows[0].id;
+}
+
+async function getRatingForGrade(userId, grade) {
+  const res = await pool.query('SELECT * FROM ratings WHERE user_id = $1 AND grade = $2', [userId, grade]);
+  if (res.rows.length > 0) return res.rows[0];
+  
+  const baseRating = 1000 + ((grade - 5) * 200);
+  const rd = 350.0;
+  const vol = 0.06;
+  const now = Date.now();
+  await pool.query(
+    'INSERT INTO ratings (user_id, grade, rating, rd, volatility, matches_played, updated_at) VALUES ($1, $2, $3, $4, $5, 0, $6)',
+    [userId, grade, baseRating, rd, vol, now]
+  );
+  return { user_id: userId, grade, rating: baseRating, rd, volatility: vol, matches_played: 0, updated_at: now };
+}
+
+async function updateRatingForGrade(userId, grade, newRating, newRd, newVol) {
+  await pool.query(
+    'UPDATE ratings SET rating = $1, rd = $2, volatility = $3, matches_played = matches_played + 1, updated_at = $4 WHERE user_id = $5 AND grade = $6',
+    [newRating, newRd, newVol, Date.now(), userId, grade]
+  );
+}
+
+async function getLeaderboardByGrade(grade) {
+  const res = await pool.query(`
+    SELECT u.username, u.wins, u.duelGames, u.soloGames, r.rating, r.matches_played 
+    FROM ratings r 
+    JOIN users u ON r.user_id = u.id 
+    WHERE r.grade = $1 
+    ORDER BY r.rating DESC 
+    LIMIT 100
+  `, [grade]);
+  return res.rows;
+}
+
+async function setDailyChallenge(grade, text, answer) {
+  await pool.query(`
+    INSERT INTO daily_challenges (grade, text, answer, updated_at)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (grade) DO UPDATE SET text = EXCLUDED.text, answer = EXCLUDED.answer, updated_at = EXCLUDED.updated_at
+  `, [grade, text, answer, Date.now()]);
+}
+
+async function getDailyChallenge(grade) {
+  const res = await pool.query('SELECT text, answer FROM daily_challenges WHERE grade = $1', [grade]);
+  return res.rows[0];
+}
+
+// Note: createUser is redefined above, I'll export it at the bottom.
+async function getUser(username) {
+  const res = await pool.query('SELECT * FROM users WHERE LOWER(username) = LOWER($1)', [username]);
+  return res.rows[0];
 }
 
 async function updateUserStats(username, updates) {
@@ -405,13 +486,21 @@ module.exports = {
   getBestResultsPerMode,
   getAllUsers,
   updateUserRole,
+  saveMatch,
+  getTournaments,
   createTournament,
-  getTournament,
-  listTournaments,
+  updateTournament,
+  deleteTournament,
   joinTournament,
-  getTournamentPlayers,
-  startTournament,
+  getTournamentLobby,
+  generateTournamentMatches,
   getTournamentMatches,
-  recordTournamentMatchResult,
+  updateMatchResult,
+  getRatingForGrade,
+  updateRatingForGrade,
+  getLeaderboardByGrade,
+  setDailyChallenge,
+  getDailyChallenge,
+  updateGrade,
   updateTournamentMatchRoom
 };

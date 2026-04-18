@@ -202,13 +202,45 @@
     state.currentUser = user;
     if (user) {
       localStorage.setItem('sciduel_current', user.username);
-      state.myName = user.username;
       socket.emit('set-user', { username: user.username });
+      fetchDailyChallenge();
     } else {
       localStorage.removeItem('sciduel_current');
-      state.myName = '';
+      $('#daily-challenge-form').style.display = 'none';
+      $('#daily-challenge-text').textContent = 'Авторизуйтесь, чтобы увидеть задачу дня для вашего класса.';
+      $('#daily-challenge-result').style.display = 'none';
     }
     updateNavbar();
+  }
+
+  function fetchDailyChallenge() {
+    if (!state.currentUser || !state.currentUser.grade) return;
+    socket.emit('get-daily-challenge', { grade: state.currentUser.grade }, (res) => {
+      if (res.ok && res.challenge && res.challenge.text) {
+        $('#daily-challenge-text').textContent = res.challenge.text;
+        $('#daily-challenge-form').style.display = 'flex';
+        
+        // Setup submit button
+        $('#daily-challenge-submit').onclick = () => {
+          const ans = $('#daily-challenge-input').value.trim();
+          if (!ans) return;
+          if (ans === res.challenge.answer) {
+             $('#daily-challenge-result').textContent = '✅ Верно! Вы решили олимпиадную задачу!';
+             $('#daily-challenge-result').style.color = 'var(--success)';
+             $('#daily-challenge-result').style.display = 'block';
+             showToast('Правильный ответ!', 'success');
+          } else {
+             $('#daily-challenge-result').textContent = '❌ Ответ неверный. Попробуйте еще раз!';
+             $('#daily-challenge-result').style.color = 'var(--danger)';
+             $('#daily-challenge-result').style.display = 'block';
+             setTimeout(() => { $('#daily-challenge-result').style.display = 'none'; }, 3000);
+          }
+        };
+      } else {
+        $('#daily-challenge-text').textContent = `Для ${state.currentUser.grade} класса на сегодня задач нет.`;
+        $('#daily-challenge-form').style.display = 'none';
+      }
+    });
   }
 
   function loadCurrentUser() {
@@ -2348,11 +2380,11 @@
   }
 
   // ──── Leaderboard ────
-  function renderLeaderboard(filter = 'all') {
+  function renderLeaderboard(grade = 5) {
     const screen = $('#screen-leaderboard');
     if (screen) screen.innerHTML = '<div style="text-align:center;padding:50px">🔍 Загрузка таблицы лидеров...</div>';
     
-    socket.emit('get-leaderboard', { filter }, (result) => {
+    socket.emit('get-leaderboard', { grade }, (result) => {
       const el = $('#screen-leaderboard');
       if (!el) return;
       if (!result || !result.ok) {
@@ -2367,10 +2399,10 @@
           <h1 style="text-align:center;margin-bottom:8px">🏆 Таблица лидеров</h1>
           <p style="text-align:center;color:var(--text-secondary);margin-bottom:24px">Лучшие умы SciDuel</p>
           
-          <div class="leaderboard-filters" style="display:flex; gap:8px; justify-content:center; margin-bottom:24px">
-            ${['hour', 'day', 'all'].map(f => `
-              <button class="btn btn-sm ${filter === f ? 'btn-primary' : 'btn-secondary'} filter-btn" data-filter="${f}">
-                ${filterLabels[f]}
+          <div class="leaderboard-filters" style="display:flex; gap:8px; justify-content:center; margin-bottom:24px; flex-wrap:wrap">
+            ${[5, 6, 7, 8, 9, 10, 11].map(f => `
+              <button class="btn btn-sm ${parseInt(filter) === f ? 'btn-primary' : 'btn-secondary'} filter-btn" data-filter="${f}">
+                ${f} класс
               </button>
             `).join('')}
           </div>
@@ -2379,8 +2411,8 @@
             <div class="leaderboard-header" style="display:flex;padding:0 16px 8px;color:var(--text-secondary);font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:16px">
               <div style="flex:0 0 50px">Место</div>
               <div style="flex:1">Игрок</div>
-              <div style="flex:0 0 80px;text-align:right">Соло</div>
-              <div style="flex:0 0 100px;text-align:right">${filter === 'all' ? 'Рейтинг' : 'Победы'}</div>
+              <div style="flex:0 0 80px;text-align:right">Победы</div>
+              <div style="flex:0 0 100px;text-align:right">Рейтинг</div>
             </div>
             ${result.leaderboard.map((user, idx) => {
               const rank = idx + 1;
@@ -2389,20 +2421,17 @@
               if (rank === 2) rankBadge = '🥈';
               if (rank === 3) rankBadge = '🥉';
               
-              const userRank = getRank(user.glicko_rating);
-              const displayRating = filter === 'all' 
-                ? `${userRank.icon} ${Math.round(user.glicko_rating || 1500)}`
-                : user.wins;
+              const userRank = getRank(user.rating || 1500);
+              const displayRating = `${userRank.icon} ${Math.round(user.rating || 1500)}`;
 
               return `
                 <div class="leaderboard-item">
                   <div class="leaderboard-rank">${rankBadge}</div>
                   <div class="leaderboard-name">${user.username}</div>
                   <div class="leaderboard-stats">
-                    <span style="color:var(--success)">${user.wins}</span>
                   </div>
-                  <div style="flex:0 0 80px;text-align:right;color:var(--accent-green)">
-                    ${user.bestSolo || 0}
+                  <div style="flex:0 0 80px;text-align:right;color:var(--success)">
+                    ${user.wins || 0}
                   </div>
                   <div class="leaderboard-winrate" style="flex:0 0 100px;color:var(--accent-blue);font-weight:bold">
                     ${displayRating}
@@ -2420,7 +2449,7 @@
       
       $$('.filter-btn', el).forEach(btn => {
         btn.addEventListener('click', () => {
-          renderLeaderboard(btn.dataset.filter);
+          renderLeaderboard(parseInt(btn.dataset.filter));
         });
       });
 
@@ -2454,6 +2483,18 @@
             <input type="password" class="form-input" id="reg-password-confirm" placeholder="Повторите пароль">
             <div class="form-error" id="reg-confirm-error"></div>
           </div>
+          <div class="form-group">
+            <label>Класс обучения</label>
+            <select id="reg-grade" class="form-input" style="background:rgba(0,0,0,0.3); color:white; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:8px; width:100%;">
+              <option value="5">5 класс</option>
+              <option value="6">6 класс</option>
+              <option value="7">7 класс</option>
+              <option value="8">8 класс</option>
+              <option value="9">9 класс</option>
+              <option value="10">10 класс</option>
+              <option value="11">11 класс</option>
+            </select>
+          </div>
           <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Зарегистрироваться</button>
         </form>
         <div class="form-footer">Уже есть аккаунт? <a id="switch-to-login">Войти</a></div>
@@ -2464,13 +2505,14 @@
         const username = $('#reg-username').value.trim();
         const password = $('#reg-password').value;
         const confirm = $('#reg-password-confirm').value;
+        const grade = parseInt($('#reg-grade').value);
         $$('.form-error', modal).forEach(el => { el.textContent = ''; el.classList.remove('visible'); });
         if (password !== confirm) {
           $('#reg-confirm-error').textContent = 'Пароли не совпадают';
           $('#reg-confirm-error').classList.add('visible');
           return;
         }
-        socket.emit('register', {username, password}, (result) => {
+        socket.emit('register', {username, password, grade}, (result) => {
           if (!result.ok) {
             $('#reg-username-error').textContent = result.msg;
             $('#reg-username-error').classList.add('visible');
@@ -2790,9 +2832,9 @@
           <button class="modal-close" id="modal-close-btn" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer">✕</button>
           <div class="profile-avatar ${rank.class}" style="width:72px;height:72px;font-size:1.8rem;margin:0 auto 12px;">${initial}</div>
           <h2 style="margin-bottom:4px">${user.username} ${rank.icon}</h2>
-          <p style="color:var(--accent-purple);font-weight:600;margin-bottom:20px">${rank.title}</p>
+          <p style="color:var(--accent-purple);font-weight:600;margin-bottom:20px">${rank.title} ${user.grade ? ' • ' + user.grade + ' класс' : ''}</p>
           <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);gap:12px;">
-            <div class="stat-card"><div class="stat-value">${Math.round(user.glicko_rating || 1500)}</div><div class="stat-label">Рейтинг</div></div>
+            <div class="stat-card"><div class="stat-value">${Math.round(user.glicko_rating || 1500)}</div><div class="stat-label">Рейтинг ${user.grade ? '(' + user.grade + ' кл.)' : ''}</div></div>
             <div class="stat-card"><div class="stat-value">${user.wins || 0}</div><div class="stat-label">Победы</div></div>
             <div class="stat-card"><div class="stat-value">${winRate}%</div><div class="stat-label">Винрейт</div></div>
           </div>
@@ -4509,6 +4551,26 @@
       });
     });
   }
+
+  const adminDcBtn = $('#admin-dc-btn');
+  if (adminDcBtn) {
+    adminDcBtn.addEventListener('click', () => {
+      const grade = parseInt($('#admin-dc-grade').value);
+      const text = $('#admin-dc-text').value.trim();
+      const answer = $('#admin-dc-answer').value.trim();
+      if (!text || !answer) { showToast('Заполните текст задачи и ответ', 'error'); return; }
+      socket.emit('admin-set-challenge', { grade, text, answer }, (res) => {
+        if (res.ok) {
+          showToast(`Задача для ${grade} класса опубликована!`, 'success');
+          $('#admin-dc-text').value = '';
+          $('#admin-dc-answer').value = '';
+        } else {
+          showToast(res.msg || 'Ошибка публикации', 'error');
+        }
+      });
+    });
+  }
+  // End of adminDcBtn block
 
   function loadAdminTournaments() {
     socket.emit('get-tournaments', {}, (res) => {
