@@ -176,6 +176,11 @@ async function listTournaments() {
   return res.rows;
 }
 
+async function cancelTournament(tournamentId) {
+  await pool.query("UPDATE tournaments SET status = 'cancelled' WHERE id = $1", [tournamentId]);
+  await pool.query("UPDATE tournament_matches SET status = 'cancelled' WHERE tournament_id = $1", [tournamentId]);
+}
+
 async function joinTournament(tournamentId, username) {
   try {
     await pool.query(
@@ -325,6 +330,10 @@ async function getAllUsers() {
 async function updateUserRole(username, role) {
   const res = await pool.query('UPDATE users SET role = $1 WHERE LOWER(username) = LOWER($2) RETURNING role', [role, username]);
   return res.rows[0];
+}
+
+async function deleteUser(username) {
+  await pool.query('DELETE FROM users WHERE LOWER(username) = LOWER($1)', [username]);
 }
 
 async function updateGrade(username, grade) {
@@ -482,11 +491,13 @@ module.exports = {
   joinTournament,
   getTournamentPlayers,
   startTournament,
+  cancelTournament,
   getTournamentMatches,
   recordTournamentMatchResult,
   updateTournamentMatchRoom,
   getAllUsers,
   updateUserRole,
+  deleteUser,
   updateGrade,
   createUser,
   getRatingForGrade,

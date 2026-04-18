@@ -4586,6 +4586,7 @@
           <div style="display:flex;gap:8px">
             ${t.status === 'waiting' ? `<button class="btn btn-primary" onclick="window.adminStartTournament(${t.id})">▶ Запустить</button>` : ''}
             <button class="btn btn-ghost" onclick="window.adminOpenLobby(${t.id})">🔗 В лобби</button>
+            <button class="btn btn-danger" onclick="window.adminCancelTournament(${t.id})">✕ Отменить</button>
           </div>
         </div>
       `).join('');
@@ -4614,6 +4615,7 @@
               ? `<button class="btn btn-ghost" style="color:#ef4444" onclick="window.adminChangeRole('${u.username}', 'user')">Снять</button>`
               : `<button class="btn btn-ghost" style="color:#34d399" onclick="window.adminChangeRole('${u.username}', 'admin')">Назначить</button>`
             }
+            <button class="btn btn-danger" onclick="window.adminDeleteUser('${u.username}')">Удалить</button>
           </div>
         </div>
       `).join('');
@@ -4642,6 +4644,26 @@
 
   window.adminOpenLobby = function(id) {
     openTournamentLobby(id, true);
+  };
+
+  window.adminDeleteUser = function(username) {
+    if (!confirm(`Точно удалить пользователя ${username} НАВСЕГДА? Это действие нельзя отменить!`)) return;
+    socket.emit('admin-delete-user', { username }, (res) => {
+      if (res.ok) {
+        showToast(`Пользователь ${username} удалён`, 'success');
+        loadAdminUsers();
+      } else showToast(res.msg, 'error');
+    });
+  };
+
+  window.adminCancelTournament = function(id) {
+    if (!confirm(`Вы уверены, что хотите отменить турнир #${id}?`)) return;
+    socket.emit('admin-cancel-tournament', { tournamentId: id }, (res) => {
+      if (res.ok) {
+        showToast(`Турнир #${id} отменён`, 'success');
+        loadAdminTournaments();
+      } else showToast(res.msg, 'error');
+    });
   };
 
   document.addEventListener('DOMContentLoaded', () => { init(); checkTournamentURLParam(); });

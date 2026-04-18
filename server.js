@@ -553,8 +553,25 @@ io.on("connection", (socket) => {
     try {
       const { username, role } = data;
       if (!username || !['admin', 'user'].includes(role)) return callback({ ok: false, msg: 'Invalid payload' });
-      // Prevent removing oneself if they are the only admin (optional safety measure, simple implementation here)
       await db.updateUserRole(username, role);
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('admin-delete-user', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
+    try {
+      const { username } = data;
+      if (!username) return callback({ ok: false, msg: 'No username provided' });
+      await db.deleteUser(username);
+      // Kick them if they are online
+      for (const [sid, user] of users.entries()) {
+        if (user.username.toLowerCase() === username.toLowerCase()) {
+          io.to(sid).emit('kicked-from-game', { msg: 'Ваш аккаунт был удален администратором.' });
+          io.sockets.sockets.get(sid)?.disconnect(true);
+        }
+      }
       callback({ ok: true });
     } catch (e) { callback({ ok: false, msg: e.message }); }
   });
@@ -615,6 +632,16 @@ io.on("connection", (socket) => {
       if (!name) return callback({ ok: false, msg: 'Missing fields' });
       const t = await db.createTournament({ name, difficulty: difficulty || 'easy' });
       callback({ ok: true, tournament: t });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('admin-cancel-tournament', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      await db.cancelTournament(data.tournamentId);
+      io.emit('tournament-updated', { tournament: { id: data.tournamentId, status: 'cancelled' }, players: [], matches: [] });
+      callback({ ok: true });
     } catch (e) { callback({ ok: false, msg: e.message }); }
   });
 
