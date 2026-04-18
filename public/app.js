@@ -207,7 +207,7 @@
     } else {
       localStorage.removeItem('sciduel_current');
       $('#daily-challenge-form').style.display = 'none';
-      $('#daily-challenge-text').textContent = 'Авторизуйтесь, чтобы увидеть задачу дня для вашего класса.';
+      $('#daily-challenge-text').textContent = 'Пожалуйста, авторизуйтесь, чтобы увидеть олимпиадную задачу для вашего класса.';
       $('#daily-challenge-result').style.display = 'none';
     }
     updateNavbar();
@@ -220,24 +220,28 @@
         $('#daily-challenge-text').textContent = res.challenge.text;
         $('#daily-challenge-form').style.display = 'flex';
         
-        // Setup submit button
         $('#daily-challenge-submit').onclick = () => {
-          const ans = $('#daily-challenge-input').value.trim();
-          if (!ans) return;
-          if (ans === res.challenge.answer) {
-             $('#daily-challenge-result').textContent = '✅ Верно! Вы решили олимпиадную задачу!';
-             $('#daily-challenge-result').style.color = 'var(--success)';
-             $('#daily-challenge-result').style.display = 'block';
-             showToast('Правильный ответ!', 'success');
-          } else {
-             $('#daily-challenge-result').textContent = '❌ Ответ неверный. Попробуйте еще раз!';
-             $('#daily-challenge-result').style.color = 'var(--danger)';
-             $('#daily-challenge-result').style.display = 'block';
-             setTimeout(() => { $('#daily-challenge-result').style.display = 'none'; }, 3000);
-          }
+          const answer = $('#daily-challenge-input').value.trim();
+          if (!answer) return;
+          
+          socket.emit('submit-daily-challenge', { answer }, (subRes) => {
+            if (subRes.ok) {
+               $('#daily-challenge-result').textContent = '✅ Правильно! Вы заработали +1 в статистику!';
+               $('#daily-challenge-result').style.color = 'var(--success)';
+               $('#daily-challenge-result').style.display = 'block';
+               showToast('Верный ответ!', 'success');
+               // Refresh user data to show new totalSolved
+               loadCurrentUser();
+            } else {
+               $('#daily-challenge-result').textContent = '❌ ' + (subRes.msg || 'Неверный ответ. Попробуйте ещё раз!');
+               $('#daily-challenge-result').style.color = 'var(--danger)';
+               $('#daily-challenge-result').style.display = 'block';
+               setTimeout(() => { $('#daily-challenge-result').style.display = 'none'; }, 4000);
+            }
+          });
         };
       } else {
-        $('#daily-challenge-text').textContent = `Для ${state.currentUser.grade} класса на сегодня задач нет.`;
+        $('#daily-challenge-text').textContent = `К сожалению, для ${state.currentUser.grade} класса пока нет новой задачи.`;
         $('#daily-challenge-form').style.display = 'none';
       }
     });
@@ -4600,12 +4604,18 @@
         return;
       }
       el.innerHTML = res.tournaments.map(t => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;">
-          <span><strong>${t.name}</strong> &nbsp;<span style="color:var(--text-muted);font-size:0.8rem">(${t.status}, ${t.playerCount}/${t.max_players})</span></span>
-          <div style="display:flex;gap:8px">
-            ${t.status === 'waiting' ? `<button class="btn btn-primary" onclick="window.adminStartTournament(${t.id})">▶ Запустить</button>` : ''}
-            <button class="btn btn-ghost" onclick="window.adminOpenLobby(${t.id})">🔗 В лобби</button>
-            <button class="btn btn-danger" onclick="window.adminCancelTournament(${t.id})">✕ Отменить</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:12px;margin-bottom:8px;transition:all 0.3s ease;" class="admin-item">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-size:1.1rem;font-weight:600;color:var(--text-primary)">${t.name}</span>
+            <div style="display:flex;gap:12px;font-size:0.85rem;color:var(--text-muted)">
+              <span>Статус: <span style="color:${t.status === 'active' ? '#10b981' : (t.status === 'waiting' ? '#f59e0b' : '#ef4444')}">${t.status.toUpperCase()}</span></span>
+              <span>Игроков: ${t.playerCount}/${t.max_players}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            ${t.status === 'waiting' ? `<button class="btn btn-primary btn-sm" onclick="window.adminStartTournament(${t.id})">▶ Запустить</button>` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="window.adminOpenLobby(${t.id})">🔗 Лобби</button>
+            <button class="btn btn-danger btn-sm" onclick="window.adminCancelTournament(${t.id})">✕ Отменить</button>
           </div>
         </div>
       `).join('');
@@ -4621,20 +4631,29 @@
         return;
       }
       el.innerHTML = res.users.map(u => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;">
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <div>
-              <strong>${u.username}</strong>
-              <span style="font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:8px;${u.role === 'admin' ? 'background:rgba(239,68,68,0.2);color:#ef4444;' : 'background:rgba(59,130,246,0.2);color:#60a5fa;'}">${u.role.toUpperCase()}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:12px;margin-bottom:8px;" class="admin-item">
+          <div style="display:flex;align-items:center;gap:16px">
+            <div style="width:40px;height:40px;border-radius:20px;background:var(--gradient-main);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.2rem;color:white;box-shadow:0 4px 12px rgba(99,102,241,0.3)">
+              ${u.username.charAt(0).toUpperCase()}
             </div>
-            <span style="font-size:0.8rem;color:var(--text-muted)">Игр: ${u.duelgames + u.sologames} • Побед: ${u.wins}</span>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:700;font-size:1rem;color:var(--text-primary)">${u.username}</span>
+                <span style="font-size:0.65rem;font-weight:800;padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.5px;
+                  ${u.role === 'admin' ? 'background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.2)' : 'background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.2)'}">
+                  ${u.role}
+                </span>
+                <span style="font-size:0.75rem;color:var(--text-muted)">• ${u.grade} класс</span>
+              </div>
+              <span style="font-size:0.8rem;color:var(--text-muted)">Игр: ${u.duelgames + u.sologames} (W:${u.wins} / L:${u.losses})</span>
+            </div>
           </div>
-          <div>
+          <div style="display:flex;gap:10px">
             ${u.role === 'admin' 
-              ? `<button class="btn btn-ghost" style="color:#ef4444" onclick="window.adminChangeRole('${u.username}', 'user')">Снять</button>`
-              : `<button class="btn btn-ghost" style="color:#34d399" onclick="window.adminChangeRole('${u.username}', 'admin')">Назначить</button>`
+              ? `<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="window.adminChangeRole('${u.username}', 'user')">Снять админа</button>`
+              : `<button class="btn btn-ghost btn-sm" style="color:#34d399" onclick="window.adminChangeRole('${u.username}', 'admin')">Дать админа</button>`
             }
-            <button class="btn btn-danger" onclick="window.adminDeleteUser('${u.username}')">Удалить</button>
+            <button class="btn btn-danger btn-sm" onclick="window.adminDeleteUser('${u.username}')">🗑️ Удалить</button>
           </div>
         </div>
       `).join('');

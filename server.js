@@ -507,10 +507,35 @@ io.on("connection", (socket) => {
 
   socket.on('get-daily-challenge', async (data, callback) => {
     try {
-      const grade = data && data.grade ? parseInt(data.grade) : 5;
+      const u = users.get(socket.id);
+      const grade = u ? u.grade : (data.grade || 5);
       const challenge = await db.getDailyChallenge(grade);
-      callback({ ok: true, challenge });
+      if (challenge) {
+        // Return everything EXCEPT the answer
+        callback({ ok: true, challenge: { text: challenge.text, grade: challenge.grade } });
+      } else {
+        callback({ ok: false, msg: 'No challenge found' });
+      }
     } catch (e) { callback({ ok: false }); }
+  });
+
+  socket.on('submit-daily-challenge', async (data, callback) => {
+    try {
+      const u = users.get(socket.id);
+      if (!u) return callback({ ok: false, msg: 'Not logged in' });
+      const { answer } = data;
+      const challenge = await db.getDailyChallenge(u.grade);
+      if (!challenge) return callback({ ok: false, msg: 'No challenge today' });
+      
+      const isCorrect = answer.trim().toLowerCase() === challenge.answer.trim().toLowerCase();
+      if (isCorrect) {
+        // Award XP or update user stats if needed
+        await db.updateUserStats(u.username, { totalSolved: (u.totalSolved || 0) + 1 });
+        callback({ ok: true, msg: 'Правильный ответ!' });
+      } else {
+        callback({ ok: false, msg: 'Неверно, попробуйте еще раз' });
+      }
+    } catch (e) { callback({ ok: false, msg: 'Server error' }); }
   });
 
   socket.on('admin-set-challenge', async (data, callback) => {
