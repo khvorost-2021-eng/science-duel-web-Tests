@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SciDuel — Админ-панель турниров</title>
+  <link rel="stylesheet" href="styles.css?v=14">
+  <style>
+    body { font-family: 'Inter', sans-serif; padding: 40px 20px; max-width: 700px; margin: 0 auto; }
+    h1 { font-size: 1.8rem; margin-bottom: 8px; }
+    .admin-section { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+    label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: var(--text-muted); }
+    input, select { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-glass); background: rgba(255,255,255,0.07); color: var(--text-primary); font-size: 0.95rem; margin-bottom: 14px; outline: none; }
+    input:focus { border-color: var(--accent-blue); }
+    #log { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 14px; font-size: 0.85rem; color: #34d399; min-height: 60px; white-space: pre-wrap; font-family: monospace; }
+    #tournaments-admin-list { display: flex; flex-direction: column; gap: 12px; }
+    .ta-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 10px; }
+    .ta-row span { flex: 1; }
+  </style>
+</head>
+<body>
+  <h1>🔧 Админ-панель турниров</h1>
+  <p style="color:var(--text-muted);margin-bottom:24px">Управление олимпийскими турнирами SciDuel</p>
+
+  <div class="admin-section">
+    <h2 style="margin-bottom:16px">➕ Создать турнир</h2>
+    <label>Название турнира</label>
+    <input id="t-name" type="text" placeholder="Например: Весенний чемпионат" />
+    <label>Сложность задач</label>
+    <select id="t-diff">
+      <option value="easy">Лёгкий</option>
+      <option value="medium">Средний</option>
+      <option value="hard">Сложный</option>
+    </select>
+    <label>Секретный код администратора (запомните!)</label>
+    <input id="t-code" type="text" placeholder="Придумайте код..." />
+    <button class="btn btn-primary" id="create-btn" style="width:100%">Создать турнир</button>
+  </div>
+
+  <div class="admin-section">
+    <h2 style="margin-bottom:16px">🏆 Активные турниры</h2>
+    <input id="admin-code-input" type="text" placeholder="Введите ваш секретный код..." />
+    <div id="tournaments-admin-list">Загрузка...</div>
+  </div>
+
+  <div class="admin-section">
+    <h2 style="margin-bottom:12px">📋 Лог</h2>
+    <div id="log">Ожидание действий...</div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const log = (msg) => {
+      document.getElementById('log').textContent += '\n' + new Date().toLocaleTimeString() + ' — ' + msg;
+    };
+
+    // Create tournament
+    document.getElementById('create-btn').addEventListener('click', () => {
+      const name = document.getElementById('t-name').value.trim();
+      const difficulty = document.getElementById('t-diff').value;
+      const adminCode = document.getElementById('t-code').value.trim();
+      if (!name || !adminCode) { alert('Заполните все поля!'); return; }
+      socket.emit('create-tournament', { name, difficulty, adminCode }, (res) => {
+        if (res.ok) {
+          log(`✅ Турнир создан: "${res.tournament.name}" (ID: ${res.tournament.id})`);
+          loadTournaments();
+        } else {
+          log('❌ Ошибка: ' + res.msg);
+        }
+      });
+    });
+
+    // Load and display tournaments
+    function loadTournaments() {
+      socket.emit('get-tournaments', {}, (res) => {
+        const el = document.getElementById('tournaments-admin-list');
+        if (!res.ok || !res.tournaments.length) {
+          el.innerHTML = '<p style="color:var(--text-muted)">Нет активных турниров</p>';
+          return;
+        }
+        el.innerHTML = res.tournaments.map(t => `
+          <div class="ta-row">
+            <span><strong>${t.name}</strong> &nbsp;(${t.status}, ${t.playerCount}/${t.max_players})</span>
+            <button class="btn btn-primary" onclick="startTournament(${t.id})">▶ Запустить</button>
+            <button class="btn btn-ghost" onclick="openLobby(${t.id})">🔗 Открыть</button>
+          </div>
+        `).join('');
+      });
+    }
+
+    function startTournament(id) {
+      const code = document.getElementById('admin-code-input').value.trim();
+      if (!code) { alert('Введите секретный код!'); return; }
+      socket.emit('start-tournament', { tournamentId: id, adminCode: code }, (res) => {
+        if (res.ok) {
+          log(`✅ Турнир #${id} запущен! Матчей: ${res.matches.length}`);
+          // Show match start panel
+          const pending = res.matches.filter(m => m.status === 'pending' && m.player1 && m.player2);
+          pending.forEach(m => {
+            log(`⚔ Матч готов: ${m.player1} vs ${m.player2} (Раунд ${m.round}, #${m.id})`);
+          });
+          loadTournaments();
+        } else {
+          log('❌ ' + res.msg);
+        }
+      });
+    }
+
+    function openLobby(id) {
+      const code = document.getElementById('admin-code-input').value.trim();
+      const url = `/?tournament=${id}&adminCode=${encodeURIComponent(code)}`;
+      window.open(url, '_blank');
+    }
+
+    // Auto-load
+    socket.on('connect', loadTournaments);
+  </script>
+</body>
+</html>

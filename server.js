@@ -354,6 +354,35 @@ async function endGame(roomCode) {
 
   io.to(roomCode).emit("game-over", payload);
 
+  // ── Tournament integration ──────────────────────────────────────────
+  if (room.tournamentMatchId && !isSolo) {
+    const winner = p1.score >= p2.score ? p1.name : p2.name;
+    try {
+      await db.recordTournamentMatchResult({
+        matchId:  room.tournamentMatchId,
+        winner,
+        score_p1: p1.score,
+        score_p2: p2.score,
+        roomCode
+      });
+      // Notify the tournament room so the bracket updates for everyone
+      const tid = room.tournamentId;
+      const matches  = await db.getTournamentMatches(tid);
+      const players  = await db.getTournamentPlayers(tid);
+      const tournament = await db.getTournament(tid);
+      io.to(`tournament-${tid}`).emit('tournament-updated', { tournament, matches, players });
+
+      // Find the next pending match for the winner and start it
+      const nextMatch = matches.find(m => m.status === 'pending' &&
+        (m.player1 === p1.name || m.player1 === p2.name ||
+         m.player2 === p1.name || m.player2 === p2.name) &&
+        m.id !== room.tournamentMatchId);
+      // (Next match will be started manually from client via start-tournament-match)
+    } catch (err) {
+      console.error('[Tournament] Error recording match result:', err);
+    }
+  }
+
   room.gameStarted = false;
   room.isRunning = false;
 
@@ -436,6 +465,121 @@ io.on("connection", (socket) => {
       const matches = await db.getMatchHistory(username, limit);
       callback({ ok: true, matches });
     } catch (e) { callback({ ok: false }); }
+  });
+
+  // ══════════════════════════════════════════════════
+  // TOURNAMENT SOCKET HANDLERS
+  // ══════════════════════════════════════════════════
+
+  socket.on('get-tournaments', async (data, callback) => {
+    try {
+      const list = await db.listTournaments();
+      // Attach player counts
+      const withCounts = await Promise.all(list.map(async t => {
+        const players = await db.getTournamentPlayers(t.id);
+        return { ...t, playerCount: players.length };
+      }));
+      callback({ ok: true, tournaments: withCounts });
+    } catch (e) { console.error(e); callback({ ok: false }); }
+  });
+
+  socket.on('get-tournament', async (data, callback) => {
+    try {
+      const t = await db.getTournament(data.id);
+      if (!t) return callback({ ok: false, msg: 'Not found' });
+      const matches = await db.getTournamentMatches(data.id);
+      const players = await db.getTournamentPlayers(data.id);
+      callback({ ok: true, tournament: t, matches, players });
+    } catch (e) { callback({ ok: false }); }
+  });
+
+  socket.on('join-tournament-room', (data) => {
+    if (data && data.tournamentId) {
+      socket.join(`tournament-${data.tournamentId}`);
+    }
+  });
+
+  socket.on('join-tournament', async (data, callback) => {
+    try {
+      const { tournamentId, username } = data;
+      if (!username) return callback({ ok: false, msg: 'Not logged in' });
+      const t = await db.getTournament(tournamentId);
+      if (!t) return callback({ ok: false, msg: 'Tournament not found' });
+      if (t.status !== 'waiting') return callback({ ok: false, msg: 'Tournament already started' });
+      const res = await db.joinTournament(tournamentId, username);
+      if (!res.ok) return callback({ ok: false, msg: res.error });
+      const players = await db.getTournamentPlayers(tournamentId);
+      // Broadcast updated player list to everyone watching
+      io.to(`tournament-${tournamentId}`).emit('tournament-players-updated', { players });
+      callback({ ok: true, players });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('create-tournament', async (data, callback) => {
+    try {
+      const { name, difficulty, adminCode } = data;
+      if (!name || !adminCode) return callback({ ok: false, msg: 'Missing fields' });
+      const t = await db.createTournament({ name, difficulty: difficulty || 'easy', adminCode });
+      callback({ ok: true, tournament: t });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('start-tournament', async (data, callback) => {
+    try {
+      const { tournamentId, adminCode } = data;
+      const t = await db.getTournament(tournamentId);
+      if (!t) return callback({ ok: false, msg: 'Not found' });
+      if (t.admin_code !== adminCode) return callback({ ok: false, msg: 'Wrong admin code' });
+      const players = await db.getTournamentPlayers(tournamentId);
+      if (players.length < 2) return callback({ ok: false, msg: 'Need at least 2 players' });
+      const started = await db.startTournament(tournamentId);
+      const matches = await db.getTournamentMatches(tournamentId);
+      const updatedPlayers = await db.getTournamentPlayers(tournamentId);
+      io.to(`tournament-${tournamentId}`).emit('tournament-started', {
+        tournament: started, matches, players: updatedPlayers
+      });
+      callback({ ok: true, tournament: started, matches, players: updatedPlayers });
+    } catch (e) { console.error(e); callback({ ok: false, msg: e.message }); }
+  });
+
+  // Start a specific pending match — called by admin or automatically
+  socket.on('start-tournament-match', async (data, callback) => {
+    try {
+      const { matchId, adminCode } = data;
+      const matchRes = await db.pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId]);
+      const match = matchRes.rows[0];
+      if (!match) return callback({ ok: false, msg: 'Match not found' });
+      const t = await db.getTournament(match.tournament_id);
+      if (adminCode && t.admin_code !== adminCode) return callback({ ok: false, msg: 'Wrong admin code' });
+      if (match.status !== 'pending') return callback({ ok: false, msg: 'Match not ready' });
+
+      // Create a duel room for this tournament match
+      const code = generateRoomCode();
+      rooms.set(code, {
+        code,
+        players: [],
+        difficulty: t.difficulty || 'easy',
+        isRanked: false,
+        gameStarted: false,
+        isRunning: false,
+        problems: [],
+        timeLeft: 90,
+        tournamentMatchId: match.id,
+        tournamentId: match.tournament_id,
+      });
+      await db.updateTournamentMatchRoom(matchId, code);
+
+      // Notify the two players to join the room
+      io.to(`tournament-${match.tournament_id}`).emit('tournament-match-ready', {
+        matchId: match.id,
+        roomCode: code,
+        player1: match.player1,
+        player2: match.player2,
+        round: match.round,
+        matchNumber: match.match_number
+      });
+      callback({ ok: true, roomCode: code });
+    } catch (e) { console.error(e); callback({ ok: false, msg: e.message }); }
   });
 
   socket.on('get-best-results', async (data, callback) => {

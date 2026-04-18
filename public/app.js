@@ -368,6 +368,7 @@
         <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
+        <button class="btn btn-ghost" id="nav-tournaments-btn">🏅 Турниры</button>
         <div class="nav-search-wrap" id="nav-search-wrap">
           <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
           <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
@@ -385,6 +386,7 @@
       $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
+      $('#nav-tournaments-btn').addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
       $('#nav-profile-btn').addEventListener('click', () => {
         renderProfile();
         navigateTo('profile');
@@ -404,6 +406,7 @@
         <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
+        <button class="btn btn-ghost" id="nav-tournaments-btn">🏅 Турниры</button>
         <div class="nav-search-wrap" id="nav-search-wrap">
           <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
           <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
@@ -418,6 +421,7 @@
       $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
+      $('#nav-tournaments-btn').addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
       $('#nav-login-btn').addEventListener('click', () => openModal('login'));
       $('#nav-register-btn').addEventListener('click', () => openModal('register'));
       initNavSearch();
@@ -4133,7 +4137,318 @@
         renderQuote();
       });
     });
+
+    // Tournament back buttons
+    $('#tournaments-back-btn')?.addEventListener('click', () => navigateTo('home'));
+    $('#tlobby-back-btn')?.addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // ═══════════════════════════════════════════════════════════
+  // TOURNAMENT MODULE — Olympic System
+  // ═══════════════════════════════════════════════════════════
+
+  let tournamentState = {
+    current: null,       // current tournament object
+    matches: [],
+    players: [],
+    adminCode: null      // set if user opened admin page
+  };
+
+  const ROUND_NAMES = { 1: 'Четвертьфинал', 2: 'Полуфинал', 3: 'Финал' };
+  const DIFFICULTY_LABELS = { easy: 'Лёгкий', medium: 'Средний', hard: 'Сложный' };
+
+  // ── Tournaments List Screen ──────────────────────────────────────────
+  function renderTournaments() {
+    const el = document.getElementById('tournaments-list');
+    if (!el) return;
+    el.innerHTML = '<div class="loading-spinner">Загрузка...</div>';
+
+    socket.emit('get-tournaments', {}, (res) => {
+      if (!res || !res.ok) {
+        el.innerHTML = '<p style="text-align:center;color:var(--text-muted)">Ошибка загрузки</p>';
+        return;
+      }
+      if (!res.tournaments || res.tournaments.length === 0) {
+        el.innerHTML = `
+          <div class="tournament-empty">
+            <div style="font-size:3rem;margin-bottom:12px">🏆</div>
+            <p>Пока нет активных турниров.</p>
+            <p style="color:var(--text-muted);font-size:0.9rem">Турниры создаются администраторами.</p>
+          </div>
+        `;
+        return;
+      }
+      el.innerHTML = res.tournaments.map(t => {
+        const statusLabel = t.status === 'waiting' ? '⏳ Ожидание' : '⚡ Активен';
+        const statusClass = t.status === 'waiting' ? 'status-waiting' : 'status-active';
+        return `
+          <div class="tournament-card" data-id="${t.id}">
+            <div class="tc-header">
+              <div class="tc-name">${t.name}</div>
+              <span class="tc-status ${statusClass}">${statusLabel}</span>
+            </div>
+            <div class="tc-meta">
+              ⚔️ Олимпийская система &nbsp;·&nbsp;
+              📊 ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} &nbsp;·&nbsp;
+              👥 ${t.playerCount}/${t.max_players}
+            </div>
+            <button class="btn btn-primary tc-join-btn" data-id="${t.id}">Открыть</button>
+          </div>
+        `;
+      }).join('');
+
+      el.querySelectorAll('.tc-join-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = parseInt(btn.dataset.id, 10);
+          openTournamentLobby(id);
+        });
+      });
+    });
+  }
+
+  // ── Tournament Lobby / Bracket Screen ─────────────────────────────────
+  function openTournamentLobby(tournamentId, adminCode = null) {
+    socket.emit('get-tournament', { id: tournamentId }, (res) => {
+      if (!res || !res.ok) { showToast('Турнир не найден', 'error'); return; }
+      tournamentState.current = res.tournament;
+      tournamentState.matches = res.matches;
+      tournamentState.players = res.players;
+      tournamentState.adminCode = adminCode;
+
+      // Join the socket room for realtime updates
+      socket.emit('join-tournament-room', { tournamentId });
+
+      renderTournamentLobby();
+      navigateTo('tournament-lobby');
+    });
+  }
+
+  function renderTournamentLobby() {
+    const t = tournamentState.current;
+    if (!t) return;
+
+    // Header
+    const title = document.getElementById('tlobby-title');
+    const subtitle = document.getElementById('tlobby-subtitle');
+    if (title) title.textContent = t.name;
+    if (subtitle) subtitle.textContent =
+      `⚔️ Олимпийская · ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} · ${t.status === 'waiting' ? 'Ожидание участников' : 'Идёт турнир'}`;
+
+    renderTournamentPlayers();
+
+    if (t.status === 'active' || t.status === 'finished') {
+      const bracketPanel = document.getElementById('tlobby-bracket-panel');
+      if (bracketPanel) bracketPanel.style.display = '';
+      renderBracket();
+      const joinArea = document.getElementById('tlobby-join-area');
+      if (joinArea) joinArea.style.display = 'none';
+    }
+
+    // Admin panel
+    if (tournamentState.adminCode) {
+      const adminPanel = document.getElementById('tlobby-admin-panel');
+      if (adminPanel) adminPanel.style.display = '';
+      renderAdminPanel();
+    }
+
+    // Join button
+    const joinBtn = document.getElementById('tlobby-join-btn');
+    if (joinBtn) {
+      const alreadyJoined = tournamentState.players.some(
+        p => p.username === (state.currentUser && state.currentUser.username)
+      );
+      if (t.status !== 'waiting' || alreadyJoined) {
+        joinBtn.style.display = 'none';
+      } else {
+        joinBtn.style.display = '';
+        joinBtn.onclick = () => {
+          if (!state.currentUser) { openModal('login'); return; }
+          socket.emit('join-tournament', {
+            tournamentId: t.id,
+            username: state.currentUser.username
+          }, (res) => {
+            if (!res.ok) { showToast(res.msg || 'Ошибка', 'error'); return; }
+            tournamentState.players = res.players;
+            renderTournamentPlayers();
+            showToast('✅ Вы записаны в турнир!', 'success');
+            joinBtn.style.display = 'none';
+          });
+        };
+      }
+    }
+  }
+
+  function renderTournamentPlayers() {
+    const el = document.getElementById('tlobby-players');
+    const countEl = document.getElementById('tlobby-count');
+    if (!el) return;
+    const players = tournamentState.players;
+    if (countEl) countEl.textContent = players.length;
+
+    if (players.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-muted)">Пока никто не записался</p>';
+      return;
+    }
+    el.innerHTML = players.map((p, i) => {
+      const statusIcon = p.status === 'winner' ? '🏆' : (p.status === 'eliminated' ? '❌' : '✅');
+      const initial = p.username.charAt(0).toUpperCase();
+      return `
+        <div class="tp-row">
+          <div class="tp-seed">#${i + 1}</div>
+          <div class="tp-avatar">${initial}</div>
+          <div class="tp-name">${p.username}</div>
+          <div class="tp-record">${p.wins}W / ${p.losses}L</div>
+          <div class="tp-status">${statusIcon}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderBracket() {
+    const el = document.getElementById('bracket-wrap');
+    if (!el) return;
+    const matches = tournamentState.matches;
+
+    const byRound = { 1: [], 2: [], 3: [] };
+    matches.forEach(m => { if (byRound[m.round]) byRound[m.round].push(m); });
+
+    const renderMatch = (m) => {
+      const p1 = m.player1 || 'TBD';
+      const p2 = m.player2 || 'TBD';
+      const winnerClass1 = m.winner === m.player1 ? 'bracket-winner' : '';
+      const winnerClass2 = m.winner === m.player2 ? 'bracket-winner' : '';
+      const statusBadge = m.status === 'finished' ? '<span class="bracket-done">✓</span>' :
+                          m.status === 'active'   ? '<span class="bracket-live">LIVE</span>' : '';
+      return `
+        <div class="bracket-match">
+          ${statusBadge}
+          <div class="bracket-player ${winnerClass1}">${p1}<span class="bracket-score">${m.score_p1 || 0}</span></div>
+          <div class="bracket-player ${winnerClass2}">${p2}<span class="bracket-score">${m.score_p2 || 0}</span></div>
+        </div>
+      `;
+    };
+
+    el.innerHTML = `
+      <div class="bracket-grid">
+        <div class="bracket-round">
+          <div class="bracket-round-label">Четвертьфинал</div>
+          ${(byRound[1]).map(renderMatch).join('')}
+        </div>
+        <div class="bracket-round">
+          <div class="bracket-round-label">Полуфинал</div>
+          ${(byRound[2]).map(renderMatch).join('')}
+        </div>
+        <div class="bracket-round">
+          <div class="bracket-round-label">Финал</div>
+          ${(byRound[3]).map(renderMatch).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAdminPanel() {
+    const el = document.getElementById('admin-matches-list');
+    if (!el) return;
+    const matches = tournamentState.matches.filter(
+      m => m.status === 'pending' && m.player1 && m.player2
+    );
+
+    if (matches.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-muted)">Нет матчей готовых к старту</p>';
+      return;
+    }
+    el.innerHTML = matches.map(m => `
+      <div class="admin-match-row">
+        <span>${ROUND_NAMES[m.round]} — матч ${m.match_number}:
+          <strong>${m.player1}</strong> vs <strong>${m.player2}</strong>
+        </span>
+        <button class="btn btn-primary" data-match-id="${m.id}" id="start-match-btn-${m.id}">▶ Начать</button>
+      </div>
+    `).join('');
+
+    el.querySelectorAll('[data-match-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const matchId = parseInt(btn.dataset.matchId, 10);
+        btn.disabled = true;
+        btn.textContent = '⏳ Запуск...';
+        socket.emit('start-tournament-match', {
+          matchId,
+          adminCode: tournamentState.adminCode
+        }, (res) => {
+          if (!res.ok) {
+            showToast(res.msg || 'Ошибка', 'error');
+            btn.disabled = false;
+            btn.textContent = '▶ Начать';
+          } else {
+            showToast(`Матч запущен! Комната: ${res.roomCode}`, 'success');
+          }
+        });
+      });
+    });
+  }
+
+  // ── Realtime tournament updates ───────────────────────────────────────
+  socket.on('tournament-players-updated', (data) => {
+    if (!tournamentState.current) return;
+    tournamentState.players = data.players;
+    renderTournamentPlayers();
+  });
+
+  socket.on('tournament-started', (data) => {
+    tournamentState.current  = data.tournament;
+    tournamentState.matches  = data.matches;
+    tournamentState.players  = data.players;
+    if ($('#screen-tournament-lobby.active')) {
+      renderTournamentLobby();
+    }
+    showToast('🏆 Турнир начался!', 'success');
+  });
+
+  socket.on('tournament-updated', (data) => {
+    tournamentState.current = data.tournament;
+    tournamentState.matches = data.matches;
+    tournamentState.players = data.players;
+    if ($('#screen-tournament-lobby.active')) {
+      renderBracket();
+      renderAdminPanel();
+      renderTournamentPlayers();
+    }
+    if (data.tournament.status === 'finished') {
+      const winner = data.players.find(p => p.status === 'winner');
+      if (winner) showToast(`🏆 Победитель турнира: ${winner.username}!`, 'success');
+    }
+  });
+
+  // When admin starts a match, the two players get redirected automatically
+  socket.on('tournament-match-ready', (data) => {
+    const me = state.myName;
+    if (me !== data.player1 && me !== data.player2) return;
+
+    showToast(`⚔️ Ваш матч начинается! ${ROUND_NAMES[data.round]}`, 'success');
+    setTimeout(() => {
+      // Join the room as a player
+      socket.emit('join-room', { code: data.roomCode, username: me }, (res) => {
+        if (res && res.ok) {
+          navigateTo('lobby');
+        } else {
+          showToast('Не удалось войти в матч', 'error');
+        }
+      });
+    }, 1500);
+  });
+
+  // Handle ?tournament=ID&adminCode=CODE URL params (from admin panel links)
+  function checkTournamentURLParam() {
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get('tournament');
+    const code = params.get('adminCode') || null;
+    if (tid) {
+      // Wait for socket to be ready, then open lobby
+      setTimeout(() => {
+        openTournamentLobby(parseInt(tid, 10), code);
+      }, 800);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { init(); checkTournamentURLParam(); });
 })();

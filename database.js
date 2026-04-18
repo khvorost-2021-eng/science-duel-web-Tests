@@ -72,11 +72,223 @@ async function initDB() {
       }
     }
     
-    console.log('[DB] Database initialized successfully on PostgreSQL (Neon.tech)');
+    // ── TOURNAMENT TABLES ──────────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tournaments (
+        id          SERIAL PRIMARY KEY,
+        name        VARCHAR(255) NOT NULL,
+        type        VARCHAR(50)  DEFAULT 'olympic',
+        status      VARCHAR(50)  DEFAULT 'waiting',
+        max_players INTEGER      DEFAULT 8,
+        difficulty  VARCHAR(50)  DEFAULT 'easy',
+        created_at  BIGINT,
+        started_at  BIGINT,
+        finished_at BIGINT,
+        admin_code  VARCHAR(64)
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tournament_players (
+        id             SERIAL PRIMARY KEY,
+        tournament_id  INTEGER REFERENCES tournaments(id) ON DELETE CASCADE,
+        username       VARCHAR(255) NOT NULL,
+        seed           INTEGER,
+        status         VARCHAR(50) DEFAULT 'active',
+        wins           INTEGER DEFAULT 0,
+        losses         INTEGER DEFAULT 0,
+        joined_at      BIGINT,
+        UNIQUE(tournament_id, username)
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tournament_matches (
+        id             SERIAL PRIMARY KEY,
+        tournament_id  INTEGER REFERENCES tournaments(id) ON DELETE CASCADE,
+        round          INTEGER NOT NULL,
+        match_number   INTEGER NOT NULL,
+        player1        VARCHAR(255),
+        player2        VARCHAR(255),
+        winner         VARCHAR(255),
+        score_p1       INTEGER DEFAULT 0,
+        score_p2       INTEGER DEFAULT 0,
+        room_code      VARCHAR(10),
+        status         VARCHAR(50) DEFAULT 'pending',
+        started_at     BIGINT,
+        finished_at    BIGINT
+      )
+    `);
+    console.log('[DB] Tournament tables ready');
+
   } finally {
     client.release();
   }
 }
+
+// ── TOURNAMENT DB FUNCTIONS ──────────────────────────────────────────────
+
+async function createTournament({ name, difficulty = 'easy', adminCode }) {
+  const res = await pool.query(
+    `INSERT INTO tournaments (name, type, status, max_players, difficulty, created_at, admin_code)
+     VALUES ($1, 'olympic', 'waiting', 8, $2, $3, $4) RETURNING *`,
+    [name, difficulty, Date.now(), adminCode]
+  );
+  return res.rows[0];
+}
+
+async function getTournament(id) {
+  const res = await pool.query('SELECT * FROM tournaments WHERE id = $1', [id]);
+  return res.rows[0];
+}
+
+async function listTournaments() {
+  const res = await pool.query(
+    `SELECT * FROM tournaments WHERE status IN ('waiting','active') ORDER BY created_at DESC LIMIT 20`
+  );
+  return res.rows;
+}
+
+async function joinTournament(tournamentId, username) {
+  try {
+    await pool.query(
+      `INSERT INTO tournament_players (tournament_id, username, joined_at)
+       VALUES ($1, $2, $3) ON CONFLICT (tournament_id, username) DO NOTHING`,
+      [tournamentId, username, Date.now()]
+    );
+    const res = await pool.query(
+      'SELECT COUNT(*)::int as count FROM tournament_players WHERE tournament_id = $1 AND status != $2',
+      [tournamentId, 'eliminated']
+    );
+    return { ok: true, count: res.rows[0].count };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function getTournamentPlayers(tournamentId) {
+  const res = await pool.query(
+    `SELECT * FROM tournament_players WHERE tournament_id = $1 ORDER BY seed ASC, joined_at ASC`,
+    [tournamentId]
+  );
+  return res.rows;
+}
+
+async function startTournament(tournamentId) {
+  // Shuffle players and assign seeds 1–8
+  const players = await getTournamentPlayers(tournamentId);
+  const shuffled = players.sort(() => Math.random() - 0.5);
+  for (let i = 0; i < shuffled.length; i++) {
+    await pool.query(
+      'UPDATE tournament_players SET seed = $1 WHERE id = $2',
+      [i + 1, shuffled[i].id]
+    );
+  }
+  // Create quarterfinal match skeleton: seed1 vs seed8, 2v7, 3v6, 4v5
+  const seedMap = {};
+  shuffled.forEach((p, i) => { seedMap[i + 1] = p.username; });
+  const pairs = [[1,8],[2,7],[3,6],[4,5]];
+  for (let i = 0; i < pairs.length; i++) {
+    const [s1, s2] = pairs[i];
+    await pool.query(
+      `INSERT INTO tournament_matches (tournament_id, round, match_number, player1, player2, status)
+       VALUES ($1, 1, $2, $3, $4, 'pending')`,
+      [tournamentId, i + 1, seedMap[s1], seedMap[s2]]
+    );
+  }
+  // Create empty semifinal and final placeholders
+  for (let i = 1; i <= 2; i++) {
+    await pool.query(
+      `INSERT INTO tournament_matches (tournament_id, round, match_number, status)
+       VALUES ($1, 2, $2, 'waiting')`,
+      [tournamentId, i]
+    );
+  }
+  await pool.query(
+    `INSERT INTO tournament_matches (tournament_id, round, match_number, status)
+     VALUES ($1, 3, 1, 'waiting')`,
+    [tournamentId]
+  );
+
+  await pool.query(
+    `UPDATE tournaments SET status = 'active', started_at = $1 WHERE id = $2`,
+    [Date.now(), tournamentId]
+  );
+  return await getTournament(tournamentId);
+}
+
+async function getTournamentMatches(tournamentId) {
+  const res = await pool.query(
+    `SELECT * FROM tournament_matches WHERE tournament_id = $1 ORDER BY round ASC, match_number ASC`,
+    [tournamentId]
+  );
+  return res.rows;
+}
+
+async function recordTournamentMatchResult({ matchId, winner, score_p1, score_p2, roomCode }) {
+  await pool.query(
+    `UPDATE tournament_matches SET winner = $1, score_p1 = $2, score_p2 = $3, room_code = $4,
+     status = 'finished', finished_at = $5 WHERE id = $6`,
+    [winner, score_p1, score_p2, roomCode, Date.now(), matchId]
+  );
+  // Update player wins/losses
+  const match = (await pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId])).rows[0];
+  const loser = match.player1 === winner ? match.player2 : match.player1;
+  await pool.query(
+    `UPDATE tournament_players SET wins = wins + 1 WHERE tournament_id = $1 AND username = $2`,
+    [match.tournament_id, winner]
+  );
+  await pool.query(
+    `UPDATE tournament_players SET losses = losses + 1, status = 'eliminated' WHERE tournament_id = $1 AND username = $2`,
+    [match.tournament_id, loser]
+  );
+
+  // Advance winner to next round
+  const tournamentId = match.tournament_id;
+  const round = match.round;
+  const matchNumber = match.match_number;
+
+  if (round === 1) {
+    // QF match 1→SF match 1 player1, QF match 2→SF match 1 player2
+    // QF match 3→SF match 2 player1, QF match 4→SF match 2 player2
+    const sfMatchNumber = matchNumber <= 2 ? 1 : 2;
+    const playerSlot = matchNumber % 2 === 1 ? 'player1' : 'player2';
+    await pool.query(
+      `UPDATE tournament_matches SET ${playerSlot} = $1, status = CASE
+         WHEN player1 IS NOT NULL AND player2 IS NOT NULL THEN 'pending' ELSE 'waiting' END
+       WHERE tournament_id = $2 AND round = 2 AND match_number = $3`,
+      [winner, tournamentId, sfMatchNumber]
+    );
+  } else if (round === 2) {
+    // SF match 1→Final player1, SF match 2→Final player2
+    const playerSlot = matchNumber === 1 ? 'player1' : 'player2';
+    await pool.query(
+      `UPDATE tournament_matches SET ${playerSlot} = $1, status = CASE
+         WHEN player1 IS NOT NULL AND player2 IS NOT NULL THEN 'pending' ELSE 'waiting' END
+       WHERE tournament_id = $2 AND round = 3 AND match_number = 1`,
+      [winner, tournamentId]
+    );
+  } else if (round === 3) {
+    // Tournament finished
+    await pool.query(
+      `UPDATE tournaments SET status = 'finished', finished_at = $1 WHERE id = $2`,
+      [Date.now(), tournamentId]
+    );
+    await pool.query(
+      `UPDATE tournament_players SET status = 'winner' WHERE tournament_id = $1 AND username = $2`,
+      [tournamentId, winner]
+    );
+  }
+}
+
+async function updateTournamentMatchRoom(matchId, roomCode) {
+  await pool.query(
+    `UPDATE tournament_matches SET room_code = $1, status = 'active', started_at = $2 WHERE id = $3`,
+    [roomCode, Date.now(), matchId]
+  );
+}
+
+// ── EXISTING FUNCTIONS ─────────────────────────────────────────────────
 
 async function getUser(username) {
   const res = await pool.query('SELECT * FROM users WHERE LOWER(username) = LOWER($1)', [username]);

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="SciDuel — научная платформа с математическими дуэлями. Соревнуйтесь в решении примеров и развивайте математические навыки!">
   <title>SciDuel — Наука • Мотивация • Дуэли</title>
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=14">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛️</text></svg>">
 </head>
 <body>
@@ -420,8 +420,55 @@
     </div>
   </div>
 
+  <!-- ═══════ TOURNAMENTS SCREEN ═══════ -->
+  <section class="screen" id="screen-tournaments">
+    <div class="profile-container">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <h1 style="font-size:2rem">🏆 Турниры</h1>
+        <button class="btn btn-ghost btn-lg" id="tournaments-back-btn">← Назад</button>
+      </div>
+      <div id="tournaments-list" class="tournaments-list">
+        <div class="loading-spinner">Загрузка...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ TOURNAMENT LOBBY/BRACKET SCREEN ═══════ -->
+  <section class="screen" id="screen-tournament-lobby">
+    <div class="profile-container">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1 id="tlobby-title" style="font-size:1.8rem">Турнир</h1>
+          <p id="tlobby-subtitle" style="color:var(--text-muted)"></p>
+        </div>
+        <button class="btn btn-ghost" id="tlobby-back-btn">← К турнирам</button>
+      </div>
+
+      <!-- Participants -->
+      <div class="tournament-panel">
+        <h2 style="margin-bottom:12px">👥 Участники (<span id="tlobby-count">0</span>/8)</h2>
+        <div id="tlobby-players" class="tournament-players-grid"></div>
+        <div id="tlobby-join-area" style="margin-top:16px;text-align:center">
+          <button class="btn btn-primary btn-lg" id="tlobby-join-btn">✅ Записаться</button>
+        </div>
+      </div>
+
+      <!-- Bracket (shown after start) -->
+      <div class="tournament-panel" id="tlobby-bracket-panel" style="display:none">
+        <h2 style="margin-bottom:20px">⚔️ Олимпийская сетка</h2>
+        <div class="bracket-wrap" id="bracket-wrap"></div>
+      </div>
+
+      <!-- Admin panel (shown when adminCode is present) -->
+      <div class="tournament-panel" id="tlobby-admin-panel" style="display:none">
+        <h2 style="margin-bottom:12px">🔧 Администратор</h2>
+        <div id="admin-matches-list"></div>
+      </div>
+    </div>
+  </section>
+
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
