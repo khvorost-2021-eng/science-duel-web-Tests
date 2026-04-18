@@ -222,7 +222,10 @@ body::before {
 .navbar-actions {
   display: flex;
   align-items: center;
+  justify-content: space-evenly;
   gap: 12px;
+  flex: 1;
+  max-width: 1200px;
 }
 
 .navbar-user {
@@ -3447,3 +3450,104 @@ input:checked + .slider:before {
 
 .sign-plus { fill: var(--success); }
 .sign-minus { fill: var(--error); }
+
+/* Victory Popup overlay */
+.victory-popup-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.4s ease;
+  backdrop-filter: blur(8px);
+}
+
+.victory-popup-card {
+  background: var(--bg-card);
+  padding: 40px;
+  border-radius: 24px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 0 50px rgba(79, 70, 229, 0.4);
+  border: 1px solid var(--border-glass);
+  animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.vic-close {
+  position: absolute;
+  top: 15px; right: 20px;
+  font-size: 1.5rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.vic-crown {
+  font-size: 4rem;
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 10px gold);
+}
+
+.victory-popup-card h3 {
+  color: var(--accent-blue);
+  font-size: 2.2rem;
+  margin-bottom: 16px;
+  letter-spacing: 2px;
+}
+
+.vic-user-avatar {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: var(--accent-gradient);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin: 0 auto 16px;
+  border: 4px solid white;
+}
+
+.vic-username {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.vic-rank-text {
+  font-size: 1rem;
+  color: var(--accent-purple);
+  margin-bottom: 20px;
+}
+
+.vic-glory {
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Results Entrance Animation */
+#screen-results.active .results-container {
+  animation: resultsEntrance 0.8s ease backwards;
+}
+
+@keyframes resultsEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+

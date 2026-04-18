@@ -21,7 +21,10 @@
 
   socket.on('room-update', (data) => {
     renderLobby(data);
-    navigateTo('lobby');
+    // Don't pull out of the results screen automatically
+    if (state.currentScreen !== 'results') {
+      navigateTo('lobby');
+    }
   });
 
   socket.on('new-chat-message', (msg) => {
@@ -290,6 +293,7 @@
         <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
         <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
         <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
+        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
         <div class="navbar-user" id="nav-profile-btn" style="cursor:pointer">
@@ -302,6 +306,7 @@
       $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
       $('#nav-practice-btn').addEventListener('click', () => { renderPracticeMode(); navigateTo('practice'); });
       $('#nav-bots-btn').addEventListener('click', () => { renderBots(); navigateTo('bots'); });
+      $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
       $('#nav-profile-btn').addEventListener('click', () => {
@@ -319,6 +324,7 @@
         <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
         <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
         <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
+        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
         <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
@@ -328,6 +334,7 @@
       $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
       $('#nav-practice-btn').addEventListener('click', () => { renderPracticeMode(); navigateTo('practice'); });
       $('#nav-bots-btn').addEventListener('click', () => { renderBots(); navigateTo('bots'); });
+      $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
       $('#nav-login-btn').addEventListener('click', () => openModal('login'));
@@ -3206,7 +3213,7 @@
     });
 
     // Award / Confetti effect
-    if (myData.score > oppData.score) {
+    if (myData && oppData && myData.score > oppData.score) {
       setTimeout(() => {
         triggerVictoryEffect();
       }, 500);

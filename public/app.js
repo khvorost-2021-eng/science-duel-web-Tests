@@ -21,7 +21,10 @@
 
   socket.on('room-update', (data) => {
     renderLobby(data);
-    navigateTo('lobby');
+    // Don't pull out of the results screen automatically
+    if (state.currentScreen !== 'results') {
+      navigateTo('lobby');
+    }
   });
 
   socket.on('new-chat-message', (msg) => {
@@ -290,6 +293,7 @@
         <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
         <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
         <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
+        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
         <div class="navbar-user" id="nav-profile-btn" style="cursor:pointer">
@@ -302,6 +306,7 @@
       $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
       $('#nav-practice-btn').addEventListener('click', () => { renderPracticeMode(); navigateTo('practice'); });
       $('#nav-bots-btn').addEventListener('click', () => { renderBots(); navigateTo('bots'); });
+      $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
       $('#nav-profile-btn').addEventListener('click', () => {
@@ -319,6 +324,7 @@
         <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
         <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
         <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
+        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
         <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
@@ -328,6 +334,7 @@
       $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
       $('#nav-practice-btn').addEventListener('click', () => { renderPracticeMode(); navigateTo('practice'); });
       $('#nav-bots-btn').addEventListener('click', () => { renderBots(); navigateTo('bots'); });
+      $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
       $('#nav-login-btn').addEventListener('click', () => openModal('login'));
@@ -2519,8 +2526,11 @@
       }
 
       listEl.innerHTML = result.matches.map(m => {
-        const date = new Date(m.timestamp);
-        const timeStr = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const ts = Number(m.timestamp);
+        const date = isNaN(ts) ? new Date(m.timestamp) : new Date(ts);
+        const timeStr = isNaN(date.getTime()) 
+          ? 'Дата неизвестна' 
+          : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
         const modeLabel = m.mode === 'solo' ? '⚡ Штурм' : '⚔️ Дуэль';
         const resultClass = m.is_win ? 'match-win' : 'match-loss';
         const resultText = m.is_win ? 'Победа' : 'Поражение';
@@ -3201,6 +3211,61 @@
       state.roomCode = null;
       navigateTo('home');
     });
+
+    // Award / Confetti effect
+    if (myData && oppData && myData.score > oppData.score) {
+      setTimeout(() => {
+        triggerVictoryEffect();
+      }, 500);
+    }
+  }
+
+  function triggerVictoryEffect() {
+    if (typeof confetti === 'undefined') return;
+    
+    const duration = 3 * 1000;
+    const end = Date.now() + duration;
+
+    (function frame() {
+      confetti({
+        particleCount: 3,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors: ['#4f46e5', '#38bdf8', '#818cf8']
+      });
+      confetti({
+        particleCount: 3,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors: ['#4f46e5', '#38bdf8', '#818cf8']
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    }());
+
+    // Show a small overlay modal for the winner
+    const initial = state.myName.charAt(0).toUpperCase();
+    const rank = getRank(state.currentUser ? state.currentUser.glicko_rating : 1500);
+    
+    const winModal = document.createElement('div');
+    winModal.className = 'victory-popup-overlay';
+    winModal.innerHTML = `
+      <div class="victory-popup-card">
+        <div class="vic-close" onclick="this.parentElement.parentElement.remove()">×</div>
+        <div class="vic-crown">🏆</div>
+        <h3>ПОБЕДА!</h3>
+        <div class="vic-user-avatar ${rank.class}">${initial}</div>
+        <div class="vic-username">${state.myName}</div>
+        <div class="vic-rank-text">${rank.icon} ${rank.title}</div>
+        <div class="vic-glory">Ваши научные достижения впечатляют!</div>
+        <button class="btn btn-primary" onclick="this.parentElement.parentElement.remove()">Продолжить</button>
+      </div>
+    `;
+    document.body.appendChild(winModal);
   }
 
   // ──── Solo Results ────
