@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SciDuel — научная платформа с математическими дуэлями. Соревнуйтесь в решении примеров и развивайте математические навыки!">
+  <title>SciDuel — Наука • Мотивация • Дуэли</title>
+  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛️</text></svg>">
+</head>
+<body>
+
+  <!-- Particles Background -->
+  <canvas id="particles-canvas"></canvas>
+
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="navbar-logo">
+      <div class="logo-icon">⚛️</div>
+      <span class="logo-text">SciDuel</span>
+    </div>
+    <button class="menu-toggle" id="mobile-menu-btn" title="Меню">☰</button>
+    <div class="navbar-actions">
+      <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
+      <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
+      <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
+      <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
+      <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
+      <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
+      <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
+      <button class="btn btn-primary" id="nav-register-btn">Регистрация</button>
+    </div>
+  </nav>
+
+  <!-- ═══════ HOME SCREEN ═══════ -->
+  <section class="screen active" id="screen-home">
+    <div class="hero">
+      <div class="hero-badge">🔬 Научная платформа нового поколения</div>
+      <h1 class="hero-title">
+        Побеждай умом<br>
+        <span class="gradient-text">Соревнуйся в математике</span>
+      </h1>
+      <p class="hero-subtitle">
+        Сражайся в интеллектуальных математических дуэлях в реальном времени
+        и развивай свои навыки в атмосфере науки и знаний
+      </p>
+      <div class="hero-actions">
+        <button class="btn btn-primary btn-lg" id="hero-duel-btn">⚔️ Создать комнату</button>
+        <button class="btn btn-secondary btn-lg" id="hero-search-btn">🔍 Найти соперника</button>
+        <button class="btn btn-accent btn-lg" id="hero-solo-btn">⚡ Штурм</button>
+        <button class="btn btn-danger btn-lg" id="hero-marathon-btn">🏆 Марафон</button>
+        <button class="btn btn-secondary btn-lg" id="hero-practice-btn">📝 Практика</button>
+      </div>
+    </div>
+
+    <!-- Quotes Section -->
+    <div class="quotes-section">
+      <h2>💡 Мудрость великих учёных</h2>
+      <div class="quote-card">
+        <p class="quote-text" id="quote-text" style="transition: all 0.4s ease">
+          Воображение важнее знания. Знание ограничено, тогда как воображение охватывает целый мир
+        </p>
+        <span class="quote-author" id="quote-author" style="transition: all 0.4s ease">— Альберт Эйнштейн</span>
+      </div>
+      <div class="quote-dots">
+        <button class="quote-dot active" data-index="0"></button>
+        <button class="quote-dot" data-index="1"></button>
+        <button class="quote-dot" data-index="2"></button>
+        <button class="quote-dot" data-index="3"></button>
+        <button class="quote-dot" data-index="4"></button>
+        <button class="quote-dot" data-index="5"></button>
+        <button class="quote-dot" data-index="6"></button>
+        <button class="quote-dot" data-index="7"></button>
+        <button class="quote-dot" data-index="8"></button>
+        <button class="quote-dot" data-index="9"></button>
+      </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="features-section">
+      <h2 style="margin-top:40px;margin-bottom:24px;color:var(--text)">🧠 Режимы игры</h2>
+      <div class="modes-grid">
+        <div class="mode-card active-mode" data-mode="basic">
+          <div class="mode-icon">➕</div>
+          <div class="mode-info">
+            <h3>Простые вычисления</h3>
+            <p>Базовая арифметика на скорость</p>
+          </div>
+        </div>
+        <div class="mode-card" data-mode="algebra">
+          <div class="mode-icon">🧮</div>
+          <div class="mode-info">
+            <h3>Алгебра</h3>
+            <p>Уравнения x + a = b</p>
+          </div>
+        </div>
+        <div class="mode-card" data-mode="geometry">
+          <div class="mode-icon">📐</div>
+          <div class="mode-info">
+            <h3>Геометрия</h3>
+            <p>Площадь и периметр фигур</p>
+          </div>
+        </div>
+        <div class="mode-card" data-mode="logic">
+          <div class="mode-icon">🧩</div>
+          <div class="mode-info">
+            <h3>Логические задачи</h3>
+            <p>Числовые последовательности</p>
+          </div>
+        </div>
+        <div class="mode-card" data-mode="blitz">
+          <div class="mode-icon">⚡</div>
+          <div class="mode-info">
+            <h3>«Блиц»</h3>
+            <p>Лёгкие задачи на скорость</p>
+          </div>
+        </div>
+        <div class="mode-card" data-mode="hardcore">
+          <div class="mode-icon">💀</div>
+          <div class="mode-info">
+            <h3>«Хардкор»</h3>
+            <p>Сложные задачи (1 мин)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="footer-logo">⚛️ SciDuel</span>
+          <p>Научная платформа нового поколения</p>
+        </div>
+        <div class="footer-links">
+          <span>© 2026 SciDuel</span>
+          <span class="footer-dot">·</span>
+          <span>Математика • Наука • Дуэли</span>
+        </div>
+      </div>
+    </footer>
+    <!-- How it Works section -->
+    <div class="how-it-works">
+      <h2>🚀 Как это работает?</h2>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-content">
+             <h3>Регистрация</h3>
+             <p>Создайте аккаунт, чтобы сохранять свой прогресс и рейтинг</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-content">
+             <h3>Дуэль</h3>
+             <p>Вызывайте друзей или ищите случайных соперников в режимах реального времени</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-content">
+             <h3>Рейтинг</h3>
+             <p>Побеждайте сильных оппонентов, чтобы быстрее подниматься в топ академии. Система учитывает стабильность ваших результатов</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ THEORY SCREEN ═══════ -->
+  <section class="screen" id="screen-theory">
+    <div class="theory-container" id="theory-container"></div>
+  </section>
+
+  <!-- ═══════ THEORY TOPIC SCREEN ═══════ -->
+  <section class="screen" id="screen-theory-topic">
+    <div class="theory-topic-page" id="theory-topic-page"></div>
+  </section>
+
+  <!-- ═══════ PRACTICE SCREEN (UNTIMED) ═══════ -->
+  <section class="screen" id="screen-practice"></section>
+
+  <!-- ═══════ PROFILE SCREEN ═══════ -->
+  <section class="screen" id="screen-profile"></section>
+
+  <!-- ═══════ SETTINGS SCREEN ═══════ -->
+  <section class="screen" id="screen-settings">
+    <div class="container" style="max-width:600px; margin: 0 auto; padding: 40px 20px;">
+      <h1 style="text-align:center; margin-bottom:32px;">⚙️ Настройки</h1>
+      
+      <div class="settings-group card" style="background:var(--bg-glass); padding:24px; border-radius:16px; margin-bottom:24px; border:1px solid var(--border-glass);">
+        <h3 style="margin-bottom:12px">🎨 Тема оформления</h3>
+        <div class="theme-selector" style="display:flex; gap:16px; margin-top:16px; flex-wrap:wrap; justify-content:center;">
+          <button class="theme-btn active" data-theme="default" style="background:#4f46e5; width:44px; height:44px; border-radius:50%; border:3px solid #fff; cursor:pointer;" title="Cosmic"></button>
+          <button class="theme-btn" data-theme="emerald" style="background:#10b981; width:44px; height:44px; border-radius:50%; border:none; cursor:pointer;" title="Emerald"></button>
+          <button class="theme-btn" data-theme="ruby" style="background:#ef4444; width:44px; height:44px; border-radius:50%; border:none; cursor:pointer;" title="Ruby"></button>
+          <button class="theme-btn" data-theme="gold" style="background:#f59e0b; width:44px; height:44px; border-radius:50%; border:none; cursor:pointer;" title="Gold"></button>
+        </div>
+      </div>
+
+      <div class="settings-group card" style="background:var(--bg-glass); padding:24px; border-radius:16px; margin-bottom:24px; border:1px solid var(--border-glass);">
+        <h3 style="margin-bottom:12px">🌐 Язык / Language</h3>
+        <select id="lang-select" class="form-input" style="margin-top:8px; background:rgba(0,0,0,0.3); color:white; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:8px; width:100%;">
+          <option value="ru">Русский</option>
+          <option value="en">English (Скоро)</option>
+        </select>
+      </div>
+
+      <div class="settings-group card" style="background:var(--bg-glass); padding:24px; border-radius:16px; margin-bottom:24px; border:1px solid var(--border-glass);">
+        <h3 style="margin-bottom:12px">🔊 Звуковые эффекты</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Включить звуки</span>
+          <label class="switch">
+            <input type="checkbox" id="sound-toggle" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group card" style="background:var(--bg-glass); padding:24px; border-radius:16px; margin-bottom:24px; border:1px solid var(--border-glass);">
+        <h3 style="margin-bottom:12px">⚡ Скорость анимации</h3>
+        <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:16px;">Быстрота реагирования интерфейса</p>
+        <input type="range" id="anim-speed-range" min="0.5" max="3" step="0.1" value="1" style="width:100%; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:12px; color:var(--text-secondary);">
+          <span>Медленно</span>
+          <span id="anim-speed-value" style="color:var(--accent-blue); font-weight:bold;">1.0x</span>
+          <span>Мгновенно</span>
+        </div>
+      </div>
+
+      <div style="text-align:center; margin-top:40px;">
+        <button class="btn btn-secondary btn-lg" id="settings-back-btn">← Вернуться</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ RULES SCREEN ═══════ -->
+  <section class="screen" id="screen-rules">
+    <div class="rules-container">
+      <h1>📘 Как играть в SciDuel</h1>
+      <p class="rules-subtitle">Краткий гайд по режимам, очкам и рейтингу</p>
+
+      <div class="rules-grid">
+        <article class="rules-card">
+          <h3>⚔️ Дуэль (онлайн)</h3>
+          <ul>
+            <li>Играют 2 игрока в реальном времени.</li>
+            <li>За верный ответ вы получаете +1 очко.</li>
+            <li>За ошибку действует штраф: -2 очка.</li>
+            <li>Побеждает игрок с наибольшим счётом к концу таймера.</li>
+          </ul>
+        </article>
+
+        <article class="rules-card">
+          <h3>⚡ Штурм (соло)</h3>
+          <ul>
+            <li>Индивидуальный режим на время без соперника.</li>
+            <li>Цель: решить максимум задач за ограниченное время.</li>
+            <li>Результат сохраняется в профиль как личный рекорд.</li>
+            <li>Отличный режим для тренировки перед дуэлями.</li>
+          </ul>
+        </article>
+
+        <article class="rules-card">
+          <h3>🏆 Рейтинг</h3>
+          <ul>
+            <li>Рейтинг меняется после рейтинговых онлайн-матчей.</li>
+            <li>Победа над сильным оппонентом приносит больше очков.</li>
+            <li>Система учитывает нестабильность формы игрока.</li>
+            <li>Чем выше рейтинг, тем выше ранг в профиле.</li>
+          </ul>
+        </article>
+
+        <article class="rules-card">
+          <h3>💡 Советы для побед</h3>
+          <ul>
+            <li>Держите высокий темп и избегайте случайных кликов.</li>
+            <li>Серия верных ответов помогает набирать отрыв.</li>
+            <li>Используйте Штурм для разогрева перед матчем.</li>
+            <li>Следите за таймером и не паникуйте в концовке.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="rules-actions">
+        <button class="btn btn-primary btn-lg" id="rules-back-btn">← На главную</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ BOTS SCREEN ═══════ -->
+  <section class="screen" id="screen-bots">
+    <div class="bots-container">
+      <div class="section-header" style="text-align:center; margin-bottom:48px;">
+        <div class="hero-badge">🤖 Академия Искусственного Интеллекта</div>
+        <h1>Сразись с лучшими ботами SciDuel</h1>
+        <p class="subtitle" style="color:var(--text-secondary); font-size:1.1rem; max-width:600px; margin: 12px auto 0;">
+          Практикуйтесь против алгоритмов разного уровня. <br> Эти матчи не влияют на ваш основной рейтинг.
+        </p>
+      </div>
+
+      <div class="bots-grid" id="bots-grid">
+        <!-- Bot cards will be injected here via JS -->
+      </div>
+
+      <div class="bots-actions" style="text-align:center; margin-top:60px;">
+        <button class="btn btn-secondary btn-lg" id="bots-back-btn">← На главную</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ SOLO SETUP (choose difficulty) ═══════ -->
+  <section class="screen" id="screen-solo-setup"></section>
+
+  <!-- ═══════ SPEED SOLVE ARENA (Штурм) ═══════ -->
+  <section class="screen" id="screen-solo-arena"></section>
+
+  <!-- ═══════ DUEL SETUP SCREEN ═══════ -->
+  <section class="screen" id="screen-duel-setup"></section>
+
+  <!-- ═══════ LOBBY (waiting for opponent) ═══════ -->
+  <section class="screen" id="screen-lobby"></section>
+
+  <!-- ═══════ MATCHMAKING SCREEN ═══════ -->
+  <section class="screen" id="screen-matchmaking"></section>
+
+  <!-- ═══════ DUEL ARENA SCREEN ═══════ -->
+  <section class="screen" id="screen-duel-arena"></section>
+
+  <!-- ═══════ RESULTS SCREEN ═══════ -->
+  <section class="screen" id="screen-results"></section>
+
+  <!-- ═══════ LEADERBOARD SCREEN ═══════ -->
+  <section class="screen" id="screen-leaderboard"></section>
+
+  <!-- In Development Screen -->
+  <section class="screen" id="screen-development">
+    <div class="container" style="text-align:center; padding: 60px 20px;">
+      <div style="font-size:4rem; margin-bottom:20px;">🚧</div>
+      <h1 style="color:var(--text-primary); margin-bottom:16px;">Режим находится в разработке</h1>
+      <p style="color:var(--text-muted); margin-bottom:40px; font-size:1.1rem; line-height:1.6;">
+        Этот тип вычислений сейчас готовится нашей командой<br>
+        Совсем скоро он появится в игре
+      </p>
+      <button class="btn btn-primary btn-lg" id="dev-back-btn">← Вернуться на главную</button>
+    </div>
+  </section>
+
+  <!-- Modal Overlay -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- Countdown Overlay -->
+  <div class="countdown-overlay" id="countdown-overlay">
+    <div class="countdown-number" id="countdown-number">3</div>
+    <div class="countdown-text">Приготовьтесь к дуэли!</div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container"></div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <span class="footer-logo">SciDuel</span>
+        <p>Научная платформа с математическими дуэлями</p>
+      </div>
+      <div class="footer-links">
+        <span>© 2026</span>
+        <span class="footer-dot">•</span>
+        <span>Разработано для будущего</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ═══════ MATH KEYBOARD ═══════ -->
+  <div id="math-keyboard" class="math-keyboard hidden">
+    <div class="keyboard-row">
+      <button class="key" data-val="1">1</button>
+      <button class="key" data-val="2">2</button>
+      <button class="key" data-val="3">3</button>
+      <button class="key" data-val="+">+</button>
+      <button class="key" data-val="-">-</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="key" data-val="4">4</button>
+      <button class="key" data-val="5">5</button>
+      <button class="key" data-val="6">6</button>
+      <button class="key" data-val="*">×</button>
+      <button class="key" data-val="/">÷</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="key" data-val="7">7</button>
+      <button class="key" data-val="8">8</button>
+      <button class="key" data-val="9">9</button>
+      <button class="key" data-val="(">(</button>
+      <button class="key" data-val=")">)</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="key" data-val="0">0</button>
+      <button class="key" data-val=".">.</button>
+      <button class="key" data-val="x">x</button>
+      <button class="key" data-val="^">^</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="key" data-val="sqrt">√</button>
+      <button class="key" data-val="log">log</button>
+      <button class="key" data-val="sin">sin</button>
+      <button class="key" data-val="cos">cos</button>
+      <button class="key" data-val="tan">tan</button>
+      <button class="key" data-val="back">⌫</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="key key-wide" id="keyboard-submit">ОТВЕТИТЬ</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js?v=12"></script>
+</body>
+</html>

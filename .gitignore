@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.json
+*.db
+*.bak
+*.log
+.env
+.gemini/
+/tmp/
