@@ -3745,5 +3745,124 @@ input:checked + .slider:before {
   border-left: 3px solid var(--accent-purple);
 }
 
+/* ── Navbar Inline Search (Lichess-style) ── */
+.nav-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.nav-search-input {
+  background: rgba(255,255,255,0.08);
+  border: 1.5px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  padding: 6px 16px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.2s, width 0.3s, background 0.2s;
+}
+
+.nav-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.nav-search-input:focus {
+  border-color: var(--accent-blue);
+  background: rgba(56,189,248,0.08);
+  width: 220px;
+}
+
+.nav-search-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 300px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-glass);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  z-index: 9999;
+  overflow: hidden;
+  animation: fadeIn 0.18s ease;
+}
+
+.nav-search-dropdown.open {
+  display: block;
+}
+
+.nsd-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.nsd-row:last-child { border-bottom: none; }
+
+.nsd-row:hover {
+  background: rgba(255,255,255,0.07);
+}
+
+.nsd-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: white;
+}
+
+.nsd-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nsd-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+
+.nsd-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.nsd-wr {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.nsd-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 900px) {
+  .nav-search-input {
+    width: 130px;
+  }
+  .nav-search-input:focus {
+    width: 160px;
+  }
+}
+
+
 
 

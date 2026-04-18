@@ -282,6 +282,78 @@
     if (h > 0) document.documentElement.style.setProperty('--nav-h', `${h}px`);
   }
 
+  // ──── Inline Navbar Player Search (Lichess-style) ────
+  function initNavSearch() {
+    const input = document.getElementById('nav-search-input');
+    const dropdown = document.getElementById('nav-search-dropdown');
+    if (!input || !dropdown) return;
+
+    let searchTimeout;
+
+    function hideDropdown() {
+      dropdown.classList.remove('open');
+      dropdown.innerHTML = '';
+    }
+
+    function showResults(players) {
+      if (!players || players.length === 0) {
+        dropdown.innerHTML = '<div class="nsd-empty">Игроки не найдены</div>';
+        dropdown.classList.add('open');
+        return;
+      }
+      dropdown.innerHTML = players.map(p => {
+        const rank = getRank(p.glicko_rating || 1500);
+        const initial = p.username.charAt(0).toUpperCase();
+        return `
+          <div class="nsd-row" data-username="${p.username}">
+            <div class="nsd-avatar ${rank.class}">${initial}</div>
+            <div class="nsd-info">
+              <span class="nsd-name">${p.username}</span>
+              <span class="nsd-meta">${rank.icon} ${rank.title} · ${Math.round(p.glicko_rating || 1500)}</span>
+            </div>
+            <span class="nsd-wr">${p.wins || 0}W / ${p.losses || 0}L</span>
+          </div>
+        `;
+      }).join('');
+      dropdown.classList.add('open');
+
+      dropdown.querySelectorAll('.nsd-row').forEach(row => {
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const uname = row.dataset.username;
+          input.value = '';
+          hideDropdown();
+          showUserProfile(uname);
+        });
+      });
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      const q = input.value.trim();
+      if (q.length < 2) { hideDropdown(); return; }
+      dropdown.innerHTML = '<div class="nsd-empty">Поиск...</div>';
+      dropdown.classList.add('open');
+      searchTimeout = setTimeout(() => {
+        socket.emit('search-players', { query: q }, (res) => {
+          showResults(res && res.ok ? res.players : []);
+        });
+      }, 350);
+    });
+
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 2) dropdown.classList.add('open');
+    });
+
+    input.addEventListener('blur', () => {
+      setTimeout(hideDropdown, 180);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { input.value = ''; hideDropdown(); }
+    });
+  }
+
   function updateNavbar() {
     const actionsEl = $('.navbar-actions');
     if (!actionsEl) return;
@@ -296,7 +368,10 @@
         <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
-        <button class="btn btn-secondary" id="nav-search-btn" title="Найти соперника">🔍 Поиск игроков</button>
+        <div class="nav-search-wrap" id="nav-search-wrap">
+          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
+          <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
+        </div>
         <div class="navbar-user" id="nav-profile-btn" style="cursor:pointer">
           <div class="user-avatar">${initial}</div>
           <span>${state.currentUser.username}</span>
@@ -310,7 +385,6 @@
       $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
-      $('#nav-search-btn').addEventListener('click', () => openPlayerSearch());
       $('#nav-profile-btn').addEventListener('click', () => {
         renderProfile();
         navigateTo('profile');
@@ -320,6 +394,7 @@
         navigateTo('home');
         showToast('Вы вышли из аккаунта', 'info');
       });
+      initNavSearch();
     } else {
       actionsEl.innerHTML = `
         <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
@@ -329,7 +404,10 @@
         <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
         <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
-        <button class="btn btn-secondary" id="nav-search-btn" title="Найти соперника">🔍 Поиск игроков</button>
+        <div class="nav-search-wrap" id="nav-search-wrap">
+          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
+          <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
+        </div>
         <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
         <button class="btn btn-primary" id="nav-register-btn">Регистрация</button>
       `;
@@ -340,9 +418,9 @@
       $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
-      $('#nav-search-btn').addEventListener('click', () => openPlayerSearch());
       $('#nav-login-btn').addEventListener('click', () => openModal('login'));
       $('#nav-register-btn').addEventListener('click', () => openModal('register'));
+      initNavSearch();
     }
   }
 
