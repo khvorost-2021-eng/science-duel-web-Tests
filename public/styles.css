@@ -4138,163 +4138,125 @@ input:checked + .slider:before {
   gap: 8px;
 }
 
-/* ═══════════════════════════════════════════
-   ADMIN PANEL REFINEMENTS
-   ═══════════════════════════════════════════ */
-.admin-panel-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 40px 24px 100px;
+.nav-dropdown-item:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.06);
 }
 
+/* =================================================
+   ADMIN & MOBILE RESPONSIVENESS OVERHAUL
+   ================================================= */
+
+/* 1. Admin Panel Refinement */
 .admin-tabs {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 32px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.admin-tabs::-webkit-scrollbar {
-  display: none;
+    flex-wrap: wrap !important;
+    justify-content: center;
+    padding: 8px !important;
+    gap: 8px !important;
 }
 
 .admin-tab-btn {
-  padding: 10px 24px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  font-weight: 600;
-  transition: all 0.3s ease;
+    flex: 1 1 auto;
+    min-width: 120px;
+    white-space: nowrap;
 }
 
 .admin-section {
-  background: var(--bg-card);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  height: 100%;
+    transition: transform 0.3s ease;
 }
 
-.admin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 24px;
-  margin-bottom: 24px;
+.admin-section:hover {
+    transform: translateY(-2px);
 }
 
-.admin-users-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.admin-user-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: all 0.2s ease;
-}
-
-.admin-user-card:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* ═══════════════════════════════════════════
-   MOBILE RESPONSIVENESS (OVERRIDE)
-   ═══════════════════════════════════════════ */
+/* 2. Global Responsiveness */
 @media (max-width: 768px) {
-  :root {
-    --nav-h: 70px;
-  }
+    :root {
+        --nav-h: 70px; /* Slimmer navbar on mobile */
+    }
 
-  .navbar {
-    height: var(--nav-h);
-    padding: 0 16px;
-  }
+    .navbar {
+        height: var(--nav-h);
+        padding: 0 16px;
+    }
 
-  .navbar-actions {
-    gap: 8px;
-  }
+    .navbar-brand .logo-text {
+        font-size: 1.2rem;
+    }
 
-  .nav-dropdown-btn {
-    padding: 8px 10px;
-    font-size: 0.85rem;
-  }
+    .navbar-actions {
+        display: none !important; /* Hide standard nav actions on mobile for now, or simplify */
+    }
 
-  .navbar-user span {
-    display: none; /* Hide name on very small screens to save space */
-  }
+    .nav-search-wrap {
+        display: none !important;
+    }
 
-  /* Screens & Containers */
-  .screen {
-    padding-top: var(--nav-h);
-  }
+    .container, .screen {
+        padding: 16px 12px !important;
+    }
 
-  .container, .admin-panel-container, .profile-container, .leaderboard-container {
-    padding-left: 16px;
-    padding-right: 16px;
-    width: 100%;
-  }
+    /* Grids to 1 column */
+    .admin-grid, 
+    .stats-grid, 
+    .modes-grid, 
+    .records-grid,
+    .records-grid-v2,
+    .players-setup,
+    .results-cards {
+        grid-template-columns: 1fr !important;
+    }
 
-  /* Grids */
-  .stats-grid, .admin-grid, .modes-grid, .records-grid, .records-grid-v2 {
-    grid-template-columns: 1fr !important;
-  }
+    /* Tournament Bracket Responsiveness */
+    .bracket-container {
+        overflow-x: auto !important;
+        padding-bottom: 20px;
+        justify-content: flex-start !important;
+        display: block !important;
+        -webkit-overflow-scrolling: touch;
+    }
 
-  /* Admin Tabs */
-  .admin-tabs {
-    justify-content: flex-start;
-    padding-left: 4px;
-  }
+    .bracket-wrapper {
+        min-width: 600px; /* Ensure bracket doesn't squash */
+        display: flex;
+        justify-content: center;
+    }
 
-  /* Tournament Bracket Mobile Horizontal Scroll */
-  .tournament-bracket {
-    display: block;
-    overflow-x: auto !important;
-    padding-bottom: 20px;
-    -webkit-overflow-scrolling: touch;
-  }
+    /* Hero section */
+    .hero-title {
+        font-size: 2.2rem !important;
+    }
 
-  .bracket-container {
-    min-width: 800px; /* Force minimum width to keep bracket structure intact while scrolling */
-  }
-
-  /* Settings Mobile */
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
-
-  /* Profile Mobile */
-  .profile-header {
-    flex-direction: column;
-    text-align: center;
-    gap: 16px;
-  }
+    /* Modal padding */
+    .modal-content {
+        width: 95% !important;
+        padding: 20px !important;
+    }
 }
 
 @media (max-width: 480px) {
-  .hero-title {
-    font-size: 2rem;
-  }
+    .mode-card {
+        padding: 16px !important;
+    }
 
-  .btn {
-    width: 100%; /* Most buttons full width on small phones */
-    justify-content: center;
-  }
-  
-  .nav-dropdown-btn {
-      padding: 6px;
-  }
-  
-  .nav-dropdown-btn span {
-      display: none;
-  }
+    .user-avatar {
+        width: 32px;
+        height: 32px;
+    }
+
+    .problem-expression {
+        font-size: 1.5rem !important;
+    }
+}
+
+/* Scrollbar styling for horizontal bracket */
+.bracket-container::-webkit-scrollbar {
+    height: 6px;
+}
+.bracket-container::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.05);
+}
+.bracket-container::-webkit-scrollbar-thumb {
+    background: var(--accent-blue);
+    border-radius: 10px;
 }

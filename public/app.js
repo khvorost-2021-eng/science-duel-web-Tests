@@ -4415,22 +4415,18 @@
     };
 
     el.innerHTML = `
-      <div class="tournament-bracket">
-        <div class="bracket-container">
-          <div class="bracket-grid">
-            <div class="bracket-round">
-              <div class="bracket-round-label">Четвертьфинал</div>
-              ${(byRound[1]).map(renderMatch).join('')}
-            </div>
-            <div class="bracket-round">
-              <div class="bracket-round-label">Полуфинал</div>
-              ${(byRound[2]).map(renderMatch).join('')}
-            </div>
-            <div class="bracket-round">
-              <div class="bracket-round-label">Финал</div>
-              ${(byRound[3]).map(renderMatch).join('')}
-            </div>
-          </div>
+      <div class="bracket-grid">
+        <div class="bracket-round">
+          <div class="bracket-round-label">Четвертьфинал</div>
+          ${(byRound[1]).map(renderMatch).join('')}
+        </div>
+        <div class="bracket-round">
+          <div class="bracket-round-label">Полуфинал</div>
+          ${(byRound[2]).map(renderMatch).join('')}
+        </div>
+        <div class="bracket-round">
+          <div class="bracket-round-label">Финал</div>
+          ${(byRound[3]).map(renderMatch).join('')}
         </div>
       </div>
     `;
@@ -4447,18 +4443,18 @@
       el.innerHTML = '<p style="color:var(--text-muted)">Нет матчей готовых к старту</p>';
       return;
     }
-    el.innerHTML = matches.map(m => `
-      <div class="admin-match-row">
-        <div style="flex:1">
-          <div style="font-weight:600">${ROUND_NAMES[m.round]} — матч ${m.match_number}</div>
-          <div style="color:var(--text-secondary)">${m.player1} vs ${m.player2}</div>
+    el.innerHTML = matches.map(m => {
+      const isStarted = !!m.room_code;
+      return `
+        <div class="admin-match-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:8px">
+          <span>${ROUND_NAMES[m.round]} — м.${m.match_number}: <strong>${m.player1}</strong> vs <strong>${m.player2}</strong></span>
+          ${isStarted ? 
+            `<span style="color:var(--accent-green); font-size:0.9rem">🎮 В процессе...</span>` : 
+            `<button class="btn btn-primary btn-sm" data-match-id="${m.id}" id="start-match-btn-${m.id}">▶ Запустить вручную</button>`
+          }
         </div>
-        <div style="text-align:right">
-          <div style="font-size:0.75rem;color:var(--accent-green);margin-bottom:4px">● Авто-старт активен</div>
-          <button class="btn btn-sm btn-secondary" data-match-id="${m.id}" id="start-match-btn-${m.id}">⏳ Перезапустить</button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     el.querySelectorAll('[data-match-id]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -4469,9 +4465,9 @@
           if (!res.ok) {
             showToast(res.msg || 'Ошибка', 'error');
             btn.disabled = false;
-            btn.textContent = '▶ Начать';
+            btn.textContent = '▶ Запустить вручную';
           } else {
-            showToast(`Матч запущен! Комната: ${res.roomCode}`, 'success');
+            showToast('Матчи запущены!', 'success');
           }
         });
       });
@@ -4571,7 +4567,7 @@
         btn.classList.remove('btn-secondary');
         btn.classList.add('btn-primary');
         
-        // Content Visibility - map 'challenge' to 'dc' if needed, but I already updated index.html to use 'dc'
+        // Content Visibility
         contents.forEach(c => {
           c.style.display = c.id === `admin-tab-${target}` ? 'block' : 'none';
         });
@@ -4668,23 +4664,24 @@
         return;
       }
       el.innerHTML = res.users.map(u => `
-        <div class="admin-user-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:12px;margin-bottom:8px;" class="admin-item">
           <div style="display:flex;align-items:center;gap:16px">
-            <div style="width:40px;height:40px;border-radius:20px;background:var(--gradient-main);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.2rem;color:white">
+            <div style="width:40px;height:40px;border-radius:20px;background:var(--gradient-main);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.2rem;color:white;box-shadow:0 4px 12px rgba(99,102,241,0.3)">
               ${u.username.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span style="font-weight:700;font-size:1rem">${u.username}</span>
-                <span style="font-size:0.7rem;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,0.1)">${u.role}</span>
-                <span style="font-size:0.7rem;color:var(--text-muted)">• ${u.grade} класс</span>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:700;font-size:1rem;color:var(--text-primary)">${u.username}</span>
+                <span style="font-size:0.65rem;font-weight:800;padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.5px;
+                  ${u.role === 'admin' ? 'background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.2)' : 'background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.2)'}">
+                  ${u.role}
+                </span>
+                <span style="font-size:0.75rem;color:var(--text-muted)">• ${u.grade} класс</span>
               </div>
-              <div style="font-size:0.85rem;color:var(--text-muted);margin-top:2px">
-                🏆 ${Math.round(u.glicko_rating || 1500)} | 🎮 ${u.duelgames + u.sologames} игр
-              </div>
+              <span style="font-size:0.8rem;color:var(--text-muted)">Игр: ${u.duelgames + u.sologames} (W:${u.wins} / L:${u.losses})</span>
             </div>
           </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <div style="display:flex;gap:10px">
             ${u.role === 'admin' 
               ? `<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="window.adminChangeRole('${u.username}', 'user')">Снять админа</button>`
               : `<button class="btn btn-ghost btn-sm" style="color:#34d399" onclick="window.adminChangeRole('${u.username}', 'admin')">Дать админа</button>`
