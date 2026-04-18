@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="SciDuel — научная платформа с математическими дуэлями. Соревнуйтесь в решении примеров и развивайте математические навыки!">
   <title>SciDuel — Наука • Мотивация • Дуэли</title>
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=16">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛️</text></svg>">
 </head>
 <body>
@@ -238,11 +238,26 @@
       </div>
 
       <div class="settings-group card" style="background:var(--bg-glass); padding:24px; border-radius:16px; margin-bottom:24px; border:1px solid var(--border-glass);">
-        <h3 style="margin-bottom:12px">🌐 Язык / Language</h3>
-        <select id="lang-select" class="form-input" style="margin-top:8px; background:rgba(0,0,0,0.3); color:white; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:8px; width:100%;">
-          <option value="ru">Русский</option>
-          <option value="en">English (Скоро)</option>
-        </select>
+        <h3 style="margin-bottom:12px">🌐 Язык / Класс</h3>
+        <div style="display:flex;gap:16px;flex-direction:column">
+          <select id="lang-select" class="form-input" style="background:rgba(0,0,0,0.3); color:white; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:8px; width:100%;">
+            <option value="ru">Русский</option>
+            <option value="en">English (Скоро)</option>
+          </select>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="white-space:nowrap">Ваш класс:</span>
+            <select id="settings-grade-select" class="form-input" style="background:rgba(0,0,0,0.3); color:white; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:8px; width:100%;">
+              <option value="5">5 класс</option>
+              <option value="6">6 класс</option>
+              <option value="7">7 класс</option>
+              <option value="8">8 класс</option>
+              <option value="9">9 класс</option>
+              <option value="10">10 класс</option>
+              <option value="11">11 класс</option>
+            </select>
+          </div>
+          <p style="font-size:0.8rem;color:var(--text-muted)">* При смене класса ваш рейтинг (Glicko-2) будет переключен на соответствующий этому классу.</p>
+        </div>
       </div>
 
       <div class="settings-group card" style="background:var(--bg-glass); padding:24px; border-radius:16px; margin-bottom:24px; border:1px solid var(--border-glass);">
@@ -505,54 +520,71 @@
   <!-- ═══════ ADMIN SCREEN ═══════ -->
   <section class="screen" id="screen-admin">
     <div class="profile-container">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:16px;">
         <div>
           <h1 style="font-size:1.8rem">🔧 Админ-панель</h1>
           <p style="color:var(--text-muted)">Управление турнирами и пользователями</p>
         </div>
-      </div>
-
-      <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px;margin-bottom:24px">
-        <h2 style="margin-bottom:16px">➕ Создать турнир</h2>
-        <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Название турнира</label>
-        <input id="admin-t-name" type="text" placeholder="Например: Весенний чемпионат" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
-        
-        <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Сложность задач</label>
-        <select id="admin-t-diff" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;">
-          <option value="easy">Лёгкий</option>
-          <option value="medium">Средний</option>
-          <option value="hard">Сложный</option>
-        </select>
-        <button class="btn btn-primary" id="admin-create-btn" style="width:100%">Создать турнир</button>
-      </div>
-
-      <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px;margin-bottom:24px">
-        <h2 style="margin-bottom:16px">🌟 Назначить Ежедневный Челлендж</h2>
-        <div style="display:flex;gap:12px;margin-bottom:14px">
-          <select id="admin-dc-grade" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);outline:none;">
-            <option value="5">5 класс</option>
-            <option value="6">6 класс</option>
-            <option value="7">7 класс</option>
-            <option value="8">8 класс</option>
-            <option value="9">9 класс</option>
-            <option value="10">10 класс</option>
-            <option value="11">11 класс</option>
-          </select>
+        <div class="admin-tabs" style="display:flex;gap:4px;background:rgba(0,0,0,0.2);padding:4px;border-radius:12px;border:1px solid var(--border-glass)">
+          <button class="btn btn-sm btn-primary admin-tab-btn" data-tab="users">👥 Пользователи</button>
+          <button class="btn btn-sm btn-secondary admin-tab-btn" data-tab="tournaments">🏆 Турниры</button>
+          <button class="btn btn-sm btn-secondary admin-tab-btn" data-tab="challenge">🌟 Задача дня</button>
         </div>
-        <textarea id="admin-dc-text" placeholder="Текст олимпиадной задачи (можно с формулами LaTeX)..." style="width:100%;height:100px;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;resize:vertical;"></textarea>
-        <input id="admin-dc-answer" type="text" placeholder="Корректный ответ" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
-        <button class="btn btn-primary" id="admin-dc-btn" style="width:100%">Опубликовать задачу</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:24px;">
-        <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">
-          <h2 style="margin-bottom:16px">🏆 Активные турниры</h2>
-          <div id="admin-tournaments-list" style="display:flex;flex-direction:column;gap:12px">Загрузка...</div>
+      <!-- Tab: Challenge -->
+      <div id="admin-tab-challenge" class="admin-tab-content" style="display:none">
+        <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px;margin-bottom:24px">
+          <h2 style="margin-bottom:16px">🌟 Назначить Ежедневный Челлендж</h2>
+          <div style="display:flex;gap:12px;margin-bottom:14px">
+            <select id="admin-dc-grade" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);outline:none;">
+              <option value="5">5 класс</option>
+              <option value="6">6 класс</option>
+              <option value="7">7 класс</option>
+              <option value="8">8 класс</option>
+              <option value="9">9 класс</option>
+              <option value="10">10 класс</option>
+              <option value="11">11 класс</option>
+            </select>
+          </div>
+          <textarea id="admin-dc-text" placeholder="Текст олимпиадной задачи (можно с формулами LaTeX)..." style="width:100%;height:100px;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;resize:vertical;"></textarea>
+          <input id="admin-dc-answer" type="text" placeholder="Корректный ответ" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
+          <button class="btn btn-primary" id="admin-dc-btn" style="width:100%">Опубликовать задачу</button>
         </div>
+      </div>
 
+      <!-- Tab: Tournaments -->
+      <div id="admin-tab-tournaments" class="admin-tab-content" style="display:none">
+        <div class="admin-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:24px;">
+          <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">
+            <h2 style="margin-bottom:16px">➕ Создать турнир</h2>
+            <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Название турнира</label>
+            <input id="admin-t-name" type="text" placeholder="Например: Весенний чемпионат" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
+            <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Сложность задач</label>
+            <select id="admin-t-diff" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;">
+              <option value="easy">Лёгкий</option>
+              <option value="medium">Средний</option>
+              <option value="hard">Сложный</option>
+            </select>
+            <button class="btn btn-primary" id="admin-create-btn" style="width:100%">Создать турнир</button>
+          </div>
+          <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">
+            <h2 style="margin-bottom:16px">🏆 Активные турниры</h2>
+            <div id="admin-tournaments-list" style="display:flex;flex-direction:column;gap:12px">Загрузка...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Users -->
+      <div id="admin-tab-users" class="admin-tab-content">
         <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">
-          <h2 style="margin-bottom:16px">👥 Пользователи</h2>
-          <div id="admin-users-list" style="display:flex;flex-direction:column;gap:12px;max-height:400px;overflow-y:auto">Загрузка...</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+            <h2 style="margin:0">👥 Список игроков</h2>
+            <div style="position:relative;flex:1;max-width:300px">
+              <input id="admin-user-search" type="text" placeholder="🔍 Найти по имени..." style="width:100%;padding:8px 12px;border-radius:12px;border:1px solid var(--border-glass);background:rgba(0,0,0,0.2);color:white;outline:none" />
+            </div>
+          </div>
+          <div id="admin-users-list" style="display:flex;flex-direction:column;gap:12px;max-height:600px;overflow-y:auto">Загрузка...</div>
         </div>
       </div>
     </div>
@@ -560,6 +592,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

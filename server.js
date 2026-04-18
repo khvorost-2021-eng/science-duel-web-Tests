@@ -462,15 +462,20 @@ io.on("connection", (socket) => {
         return callback({ ok: false, msg: 'Неверный пароль' });
       }
       
+      // Default grade for old accounts
+      if (!user.grade) {
+          user.grade = 5;
+          await db.updateGrade(user.username, 5);
+      }
+      
       users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role, grade: user.grade });
       const { password: _, ...userNoPw } = user;
       
-      if (user.grade) {
-          const userRating = await db.getRatingForGrade(user.id, user.grade);
-          userNoPw.glicko_rating = userRating.rating;
-          userNoPw.glicko_rd = userRating.rd;
-          userNoPw.glicko_vol = userRating.volatility;
-      }
+      const userRating = await db.getRatingForGrade(user.id, user.grade);
+      userNoPw.glicko_rating = userRating.rating;
+      userNoPw.glicko_rd = userRating.rd;
+      userNoPw.glicko_vol = userRating.volatility;
+
       callback({ ok: true, user: userNoPw });
     } catch (e) {
       console.error(e);
@@ -482,19 +487,49 @@ io.on("connection", (socket) => {
     try {
       const user = await db.getUser(data.username);
       if (user) {
+        // Default grade for old accounts
+        if (!user.grade) {
+            user.grade = 5;
+            await db.updateGrade(user.username, 5);
+        }
         users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role, grade: user.grade });
         const { password: _, ...userNoPw } = user;
-        if (user.grade) {
-          const userRating = await db.getRatingForGrade(user.id, user.grade);
-          userNoPw.glicko_rating = userRating.rating;
-          userNoPw.glicko_rd = userRating.rd;
-          userNoPw.glicko_vol = userRating.volatility;
-        }
+        
+        const userRating = await db.getRatingForGrade(user.id, user.grade);
+        userNoPw.glicko_rating = userRating.rating;
+        userNoPw.glicko_rd = userRating.rd;
+        userNoPw.glicko_vol = userRating.volatility;
+        
         callback({ ok: true, user: userNoPw });
       } else {
         callback({ ok: false });
       }
     } catch (e) { callback({ ok: false }); }
+  });
+
+  socket.on('update-grade', async (data, callback) => {
+    try {
+      const u = users.get(socket.id);
+      if (!u || !u.username) return callback({ ok: false, msg: 'Not logged in' });
+      const { grade } = data;
+      const gNum = parseInt(grade);
+      if (isNaN(gNum) || gNum < 5 || gNum > 11) return callback({ ok: false, msg: 'Invalid grade' });
+      
+      const dbUser = await db.getUser(u.username);
+      if (!dbUser) return callback({ ok: false, msg: 'User not found' });
+      
+      await db.updateGrade(u.username, gNum);
+      u.grade = gNum;
+      
+      const userRating = await db.getRatingForGrade(dbUser.id, gNum);
+      const { password: _, ...userNoPw } = dbUser;
+      userNoPw.grade = gNum;
+      userNoPw.glicko_rating = userRating.rating;
+      userNoPw.glicko_rd = userRating.rd;
+      userNoPw.glicko_vol = userRating.volatility;
+      
+      callback({ ok: true, user: userNoPw });
+    } catch (e) { callback({ ok: false, msg: 'Error updating grade' }); }
   });
 
   socket.on('get-leaderboard', async (data, callback) => {
@@ -508,10 +543,12 @@ io.on("connection", (socket) => {
   socket.on('get-daily-challenge', async (data, callback) => {
     try {
       const u = users.get(socket.id);
-      const grade = u ? u.grade : (data.grade || 5);
+      let grade = u ? u.grade : (data.grade || 5);
+      grade = parseInt(grade); // Ensure it's a number
+      if (isNaN(grade)) grade = 5;
+
       const challenge = await db.getDailyChallenge(grade);
       if (challenge) {
-        // Return everything EXCEPT the answer
         callback({ ok: true, challenge: { text: challenge.text, grade: challenge.grade } });
       } else {
         callback({ ok: false, msg: 'No challenge found' });
@@ -524,7 +561,8 @@ io.on("connection", (socket) => {
       const u = users.get(socket.id);
       if (!u) return callback({ ok: false, msg: 'Not logged in' });
       const { answer } = data;
-      const challenge = await db.getDailyChallenge(u.grade);
+      const grade = parseInt(u.grade) || 5;
+      const challenge = await db.getDailyChallenge(grade);
       if (!challenge) return callback({ ok: false, msg: 'No challenge today' });
       
       const isCorrect = answer.trim().toLowerCase() === challenge.answer.trim().toLowerCase();
@@ -567,7 +605,12 @@ io.on("connection", (socket) => {
     const u = users.get(socket.id);
     if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
     try {
-      const allUsers = await db.getAllUsers();
+      const { search } = data || {};
+      let allUsers = await db.getAllUsers();
+      if (search) {
+        const query = search.toLowerCase();
+        allUsers = allUsers.filter(user => user.username.toLowerCase().includes(query));
+      }
       callback({ ok: true, users: allUsers });
     } catch (e) { callback({ ok: false, msg: e.message }); }
   });

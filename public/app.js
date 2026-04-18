@@ -2394,6 +2394,32 @@
         showToast(state.isSound ? 'Звук включен 🔊' : 'Звук выключен 🔇', 'info');
       });
     }
+
+    // Grade selection logic
+    const gradeSelect = $('#settings-grade-select');
+    if (gradeSelect && state.currentUser) {
+      gradeSelect.value = state.currentUser.grade || 5;
+      gradeSelect.onchange = () => {
+        const newGrade = parseInt(gradeSelect.value);
+        if (confirm(`Переключить обучение на ${newGrade} класс? Ваш рейтинг будет обновлен для этого класса.`)) {
+          socket.emit('update-grade', { grade: newGrade }, (res) => {
+            if (res.ok) {
+              state.currentUser = res.user;
+              showToast(`Класс изменен на ${newGrade}!`, 'success');
+              fetchDailyChallenge(); // Refresh challenge for new grade
+              // Also update rating display if on profile
+              if ($('#screen-profile.active')) renderProfile();
+            } else {
+              showToast(res.msg || 'Ошибка смены класса', 'error');
+              gradeSelect.value = state.currentUser.grade;
+            }
+          });
+        } else {
+          gradeSelect.value = state.currentUser.grade;
+        }
+      };
+    }
+
     $$('.theme-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         applyTheme(btn.dataset.theme);
@@ -2424,7 +2450,7 @@
           
           <div class="leaderboard-filters" style="display:flex; gap:8px; justify-content:center; margin-bottom:24px; flex-wrap:wrap">
             ${[5, 6, 7, 8, 9, 10, 11].map(f => `
-              <button class="btn btn-sm ${parseInt(filter) === f ? 'btn-primary' : 'btn-secondary'} filter-btn" data-filter="${f}">
+              <button class="btn btn-sm ${parseInt(grade) === f ? 'btn-primary' : 'btn-secondary'} filter-btn" data-filter="${f}">
                 ${f} класс
               </button>
             `).join('')}
@@ -4553,8 +4579,53 @@
   // ═══════════════════════════════════════════════════════════
 
   function renderAdminPanelUI() {
+    initAdminTabs();
     loadAdminTournaments();
     loadAdminUsers();
+  }
+
+  function initAdminTabs() {
+    const tabs = $$('.admin-tab-btn');
+    const contents = $$('.admin-tab-content');
+    
+    // Set default tab visibility
+    contents.forEach(c => c.style.display = 'none');
+    const defaultTab = $('#admin-tab-users');
+    if (defaultTab) defaultTab.style.display = 'block';
+
+    tabs.forEach(btn => {
+      btn.onclick = () => {
+        const target = btn.dataset.tab;
+        
+        // UI Update (Buttons)
+        tabs.forEach(b => {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-secondary');
+        });
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-primary');
+        
+        // Content Visibility
+        contents.forEach(c => {
+          c.style.display = c.id === `admin-tab-${target}` ? 'block' : 'none';
+        });
+
+        // Specific Tab Data Reloading
+        if (target === 'users') loadAdminUsers();
+        if (target === 'tournaments') loadAdminTournaments();
+      };
+    });
+  }
+
+  const userSearchInput = $('#admin-user-search');
+  if (userSearchInput) {
+    let searchTimeout;
+    userSearchInput.oninput = () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        loadAdminUsers(userSearchInput.value.trim());
+      }, 400);
+    };
   }
 
   const adminCreateBtn = $('#admin-create-btn');
@@ -4622,8 +4693,8 @@
     });
   }
 
-  function loadAdminUsers() {
-    socket.emit('admin-get-users', {}, (res) => {
+  function loadAdminUsers(searchQuery = '') {
+    socket.emit('admin-get-users', { search: searchQuery }, (res) => {
       const el = $('#admin-users-list');
       if (!el) return;
       if (!res.ok) {
