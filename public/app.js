@@ -387,13 +387,15 @@
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
       $('#nav-tournaments-btn').addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
-      if (state.currentUser && state.currentUser.role === 'admin') {
-        const adBtn = document.createElement('button');
-        adBtn.className = 'btn btn-ghost';
-        adBtn.textContent = '🔧 Админка';
-        adBtn.onclick = () => window.open('/admin.html', '_blank');
-        actionsEl.insertBefore(adBtn, document.getElementById('nav-search-wrap'));
+      
+      const adminBtn = $('#nav-admin-btn');
+      if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+          renderAdminPanelUI();
+          navigateTo('admin');
+        });
       }
+
       $('#nav-profile-btn').addEventListener('click', () => {
         renderProfile();
         navigateTo('profile');
@@ -4443,18 +4445,116 @@
     }, 1500);
   });
 
-  // Handle ?tournament=ID&admin=true URL params (from admin panel links)
+  // Handle ?tournament=ID&admin=true URL params
   function checkTournamentURLParam() {
     const params = new URLSearchParams(window.location.search);
     const tid = params.get('tournament');
     const isAdmin = params.get('admin') === 'true';
     if (tid) {
-      // Wait for socket to be ready, then open lobby
       setTimeout(() => {
         openTournamentLobby(parseInt(tid, 10), isAdmin);
       }, 800);
     }
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // ADMIN PANEL UI SYSTEM (Built-in)
+  // ═══════════════════════════════════════════════════════════
+
+  function renderAdminPanelUI() {
+    loadAdminTournaments();
+    loadAdminUsers();
+  }
+
+  const adminCreateBtn = $('#admin-create-btn');
+  if (adminCreateBtn) {
+    adminCreateBtn.addEventListener('click', () => {
+      const name = $('#admin-t-name').value.trim();
+      const difficulty = $('#admin-t-diff').value;
+      if (!name) { showToast('Укажите название!', 'error'); return; }
+      socket.emit('create-tournament', { name, difficulty }, (res) => {
+        if (res.ok) {
+          showToast(`Турнир создан: "${res.tournament.name}"`, 'success');
+          $('#admin-t-name').value = '';
+          loadAdminTournaments();
+        } else {
+          showToast(res.msg, 'error');
+        }
+      });
+    });
+  }
+
+  function loadAdminTournaments() {
+    socket.emit('get-tournaments', {}, (res) => {
+      const el = $('#admin-tournaments-list');
+      if (!el) return;
+      if (!res.ok || !res.tournaments.length) {
+        el.innerHTML = '<p style="color:var(--text-muted)">Нет активных турниров</p>';
+        return;
+      }
+      el.innerHTML = res.tournaments.map(t => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;">
+          <span><strong>${t.name}</strong> &nbsp;<span style="color:var(--text-muted);font-size:0.8rem">(${t.status}, ${t.playerCount}/${t.max_players})</span></span>
+          <div style="display:flex;gap:8px">
+            ${t.status === 'waiting' ? `<button class="btn btn-primary" onclick="window.adminStartTournament(${t.id})">▶ Запустить</button>` : ''}
+            <button class="btn btn-ghost" onclick="window.adminOpenLobby(${t.id})">🔗 В лобби</button>
+          </div>
+        </div>
+      `).join('');
+    });
+  }
+
+  function loadAdminUsers() {
+    socket.emit('admin-get-users', {}, (res) => {
+      const el = $('#admin-users-list');
+      if (!el) return;
+      if (!res.ok) {
+        el.innerHTML = '<p style="color:#ef4444">Ошибка: ' + res.msg + '</p>';
+        return;
+      }
+      el.innerHTML = res.users.map(u => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div>
+              <strong>${u.username}</strong>
+              <span style="font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:8px;${u.role === 'admin' ? 'background:rgba(239,68,68,0.2);color:#ef4444;' : 'background:rgba(59,130,246,0.2);color:#60a5fa;'}">${u.role.toUpperCase()}</span>
+            </div>
+            <span style="font-size:0.8rem;color:var(--text-muted)">Игр: ${u.duelgames + u.sologames} • Побед: ${u.wins}</span>
+          </div>
+          <div>
+            ${u.role === 'admin' 
+              ? `<button class="btn btn-ghost" style="color:#ef4444" onclick="window.adminChangeRole('${u.username}', 'user')">Снять</button>`
+              : `<button class="btn btn-ghost" style="color:#34d399" onclick="window.adminChangeRole('${u.username}', 'admin')">Назначить</button>`
+            }
+          </div>
+        </div>
+      `).join('');
+    });
+  }
+
+  window.adminStartTournament = function(id) {
+    if (!confirm('Запустить формулу турнира (перемешивание игроков)?')) return;
+    socket.emit('start-tournament', { tournamentId: id }, (res) => {
+      if (res.ok) {
+        showToast('Турнир запущен! Матчей ' + res.matches.length, 'success');
+        loadAdminTournaments();
+      } else showToast(res.msg, 'error');
+    });
+  };
+
+  window.adminChangeRole = function(username, newRole) {
+    if (!confirm(`Изменить права пользователя ${username} на ${newRole}?`)) return;
+    socket.emit('admin-set-role', { username, role: newRole }, (res) => {
+      if (res.ok) {
+        showToast(`Роль ${username} изменена!`, 'success');
+        loadAdminUsers();
+      } else showToast(res.msg, 'error');
+    });
+  };
+
+  window.adminOpenLobby = function(id) {
+    openTournamentLobby(id, true);
+  };
 
   document.addEventListener('DOMContentLoaded', () => { init(); checkTournamentURLParam(); });
 })();

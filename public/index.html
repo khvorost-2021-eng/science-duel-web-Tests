@@ -466,6 +466,43 @@
       </div>
     </div>
   </section>
+  <!-- ═══════ ADMIN SCREEN ═══════ -->
+  <section class="screen" id="screen-admin">
+    <div class="profile-container">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+        <div>
+          <h1 style="font-size:1.8rem">🔧 Админ-панель</h1>
+          <p style="color:var(--text-muted)">Управление турнирами и пользователями</p>
+        </div>
+      </div>
+
+      <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px;margin-bottom:24px">
+        <h2 style="margin-bottom:16px">➕ Создать турнир</h2>
+        <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Название турнира</label>
+        <input id="admin-t-name" type="text" placeholder="Например: Весенний чемпионат" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
+        
+        <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Сложность задач</label>
+        <select id="admin-t-diff" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;">
+          <option value="easy">Лёгкий</option>
+          <option value="medium">Средний</option>
+          <option value="hard">Сложный</option>
+        </select>
+        <button class="btn btn-primary" id="admin-create-btn" style="width:100%">Создать турнир</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:24px;">
+        <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">
+          <h2 style="margin-bottom:16px">🏆 Активные турниры</h2>
+          <div id="admin-tournaments-list" style="display:flex;flex-direction:column;gap:12px">Загрузка...</div>
+        </div>
+
+        <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">
+          <h2 style="margin-bottom:16px">👥 Пользователи</h2>
+          <div id="admin-users-list" style="display:flex;flex-direction:column;gap:12px;max-height:400px;overflow-y:auto">Загрузка...</div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
