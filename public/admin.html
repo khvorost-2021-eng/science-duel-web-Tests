@@ -6,21 +6,29 @@
   <title>SciDuel — Админ-панель турниров</title>
   <link rel="stylesheet" href="styles.css?v=14">
   <style>
-    body { font-family: 'Inter', sans-serif; padding: 40px 20px; max-width: 700px; margin: 0 auto; }
+    body { font-family: 'Inter', sans-serif; padding: 40px 20px; max-width: 800px; margin: 0 auto; display: none; }
     h1 { font-size: 1.8rem; margin-bottom: 8px; }
     .admin-section { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 16px; padding: 24px; margin-bottom: 24px; }
     label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: var(--text-muted); }
     input, select { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-glass); background: rgba(255,255,255,0.07); color: var(--text-primary); font-size: 0.95rem; margin-bottom: 14px; outline: none; }
     input:focus { border-color: var(--accent-blue); }
-    #log { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 14px; font-size: 0.85rem; color: #34d399; min-height: 60px; white-space: pre-wrap; font-family: monospace; }
-    #tournaments-admin-list { display: flex; flex-direction: column; gap: 12px; }
-    .ta-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 10px; }
-    .ta-row span { flex: 1; }
+    #log { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 14px; font-size: 0.85rem; color: #34d399; min-height: 60px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; }
+    #tournaments-admin-list, #users-admin-list { display: flex; flex-direction: column; gap: 12px; }
+    .ta-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 10px; }
+    .ta-row span { flex: 1; min-width: 200px; }
+    .role-badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; }
+    .role-admin { background: rgba(239,68,68,0.2); color: #f87171; }
+    .role-user { background: rgba(59,130,246,0.2); color: #60a5fa; }
   </style>
 </head>
 <body>
-  <h1>🔧 Админ-панель турниров</h1>
-  <p style="color:var(--text-muted);margin-bottom:24px">Управление олимпийскими турнирами SciDuel</p>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+    <div>
+      <h1>🔧 Админ-панель SciDuel</h1>
+      <p style="color:var(--text-muted);">Вы вошли как: <strong id="admin-username">...</strong></p>
+    </div>
+    <a href="/" class="btn btn-ghost">← На сайт</a>
+  </div>
 
   <div class="admin-section">
     <h2 style="margin-bottom:16px">➕ Создать турнир</h2>
@@ -32,15 +40,17 @@
       <option value="medium">Средний</option>
       <option value="hard">Сложный</option>
     </select>
-    <label>Секретный код администратора (запомните!)</label>
-    <input id="t-code" type="text" placeholder="Придумайте код..." />
     <button class="btn btn-primary" id="create-btn" style="width:100%">Создать турнир</button>
   </div>
 
   <div class="admin-section">
     <h2 style="margin-bottom:16px">🏆 Активные турниры</h2>
-    <input id="admin-code-input" type="text" placeholder="Введите ваш секретный код..." />
     <div id="tournaments-admin-list">Загрузка...</div>
+  </div>
+
+  <div class="admin-section">
+    <h2 style="margin-bottom:16px">👥 Управление пользователями</h2>
+    <div id="users-admin-list">Загрузка...</div>
   </div>
 
   <div class="admin-section">
@@ -51,27 +61,66 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
+    const currentUser = localStorage.getItem('sciduel_current');
+    
+    if (!currentUser) {
+      alert("Вы не авторизованы. Войдите на главном сайте.");
+      window.location.href = "/";
+    }
+
     const log = (msg) => {
-      document.getElementById('log').textContent += '\n' + new Date().toLocaleTimeString() + ' — ' + msg;
+      const logEl = document.getElementById('log');
+      logEl.textContent += '\n' + new Date().toLocaleTimeString() + ' — ' + msg;
+      logEl.scrollTop = logEl.scrollHeight;
     };
+
+    socket.on('connect', () => {
+      // Инициализируем сессию в сокетах
+      socket.emit('get-user', { username: currentUser }, (res) => {
+        if (!res || !res.ok) {
+          alert('Ошибка авторизации');
+          window.location.href = "/";
+          return;
+        }
+        if (res.user.role !== 'admin') {
+          document.body.innerHTML = `
+            <div style="text-align:center;padding:100px;">
+              <h1 style="color:#ef4444;font-size:4rem;margin-bottom:20px">⛔</h1>
+              <h2>Доступ запрещён</h2>
+              <p style="color:var(--text-muted);margin:20px 0">У вас нет прав администратора.</p>
+              <a href="/" class="btn btn-primary">Вернуться на сайт</a>
+            </div>
+          `;
+          document.body.style.display = 'block';
+          return;
+        }
+        
+        // Админ подтверждён
+        document.getElementById('admin-username').textContent = res.user.username;
+        document.body.style.display = 'block';
+        
+        loadTournaments();
+        loadUsers();
+      });
+    });
 
     // Create tournament
     document.getElementById('create-btn').addEventListener('click', () => {
       const name = document.getElementById('t-name').value.trim();
       const difficulty = document.getElementById('t-diff').value;
-      const adminCode = document.getElementById('t-code').value.trim();
-      if (!name || !adminCode) { alert('Заполните все поля!'); return; }
-      socket.emit('create-tournament', { name, difficulty, adminCode }, (res) => {
+      if (!name) { alert('Укажите название!'); return; }
+      socket.emit('create-tournament', { name, difficulty }, (res) => {
         if (res.ok) {
-          log(`✅ Турнир создан: "${res.tournament.name}" (ID: ${res.tournament.id})`);
+          log(`✅ Турнир создан: "${res.tournament.name}"`);
           loadTournaments();
+          document.getElementById('t-name').value = '';
         } else {
-          log('❌ Ошибка: ' + res.msg);
+          log('❌ ' + res.msg);
         }
       });
     });
 
-    // Load and display tournaments
+    // Load tournaments
     function loadTournaments() {
       socket.emit('get-tournaments', {}, (res) => {
         const el = document.getElementById('tournaments-admin-list');
@@ -82,39 +131,72 @@
         el.innerHTML = res.tournaments.map(t => `
           <div class="ta-row">
             <span><strong>${t.name}</strong> &nbsp;(${t.status}, ${t.playerCount}/${t.max_players})</span>
-            <button class="btn btn-primary" onclick="startTournament(${t.id})">▶ Запустить</button>
-            <button class="btn btn-ghost" onclick="openLobby(${t.id})">🔗 Открыть</button>
+            <div>
+              ${t.status === 'waiting' ? `<button class="btn btn-primary" onclick="startTournament(${t.id})">▶ Запустить</button>` : ''}
+              <button class="btn btn-ghost" onclick="openLobby(${t.id})">🔗 В лобби</button>
+            </div>
           </div>
         `).join('');
       });
     }
 
     function startTournament(id) {
-      const code = document.getElementById('admin-code-input').value.trim();
-      if (!code) { alert('Введите секретный код!'); return; }
-      socket.emit('start-tournament', { tournamentId: id, adminCode: code }, (res) => {
+      if (!confirm('Запустить генерацию сетки?')) return;
+      socket.emit('start-tournament', { tournamentId: id }, (res) => {
         if (res.ok) {
-          log(`✅ Турнир #${id} запущен! Матчей: ${res.matches.length}`);
-          // Show match start panel
-          const pending = res.matches.filter(m => m.status === 'pending' && m.player1 && m.player2);
-          pending.forEach(m => {
-            log(`⚔ Матч готов: ${m.player1} vs ${m.player2} (Раунд ${m.round}, #${m.id})`);
-          });
+          log(`✅ Турнир #${id} запущен! Матчей сгенерировано: ${res.matches.length}`);
           loadTournaments();
         } else {
-          log('❌ ' + res.msg);
+          log('❌ Ошибка старта: ' + res.msg);
         }
       });
     }
 
     function openLobby(id) {
-      const code = document.getElementById('admin-code-input').value.trim();
-      const url = `/?tournament=${id}&adminCode=${encodeURIComponent(code)}`;
-      window.open(url, '_blank');
+      window.open(`/?tournament=${id}&admin=true`, '_blank');
     }
 
-    // Auto-load
-    socket.on('connect', loadTournaments);
+    // Load users
+    function loadUsers() {
+      socket.emit('admin-get-users', {}, (res) => {
+        const el = document.getElementById('users-admin-list');
+        if (!res.ok) {
+          el.innerHTML = '<p style="color:red">Ошибка загрузки пользователей: ' + res.msg + '</p>';
+          return;
+        }
+        if (res.users.length === 0) {
+          el.innerHTML = '<p>Пусто</p>';
+          return;
+        }
+        el.innerHTML = res.users.map(u => `
+          <div class="ta-row">
+            <span>
+              <strong>${u.username}</strong>
+              <span class="role-badge ${u.role === 'admin' ? 'role-admin' : 'role-user'}">${u.role.toUpperCase()}</span>
+            </span>
+            <span>Игр: ${u.duelgames + u.sologames} &nbsp;Побед: ${u.wins}</span>
+            <div>
+              ${u.role === 'admin' 
+                ? `<button class="btn btn-ghost" style="color:#ef4444;border-color:#ef4444" onclick="changeRole('${u.username}', 'user')">Снять права</button>`
+                : `<button class="btn btn-ghost" style="color:#34d399;border-color:#34d399" onclick="changeRole('${u.username}', 'admin')">Дать права</button>`
+              }
+            </div>
+          </div>
+        `).join('');
+      });
+    }
+
+    function changeRole(username, newRole) {
+      if (!confirm(`Изменить права пользователя ${username} на ${newRole}?`)) return;
+      socket.emit('admin-set-role', { username, role: newRole }, (res) => {
+        if (res.ok) {
+          log(`👑 Роль ${username} изменена на ${newRole}`);
+          loadUsers();
+        } else {
+          log('❌ Ошибка изменения роли: ' + res.msg);
+        }
+      });
+    }
   </script>
 </body>
 </html>

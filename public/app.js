@@ -387,6 +387,13 @@
       $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
       $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
       $('#nav-tournaments-btn').addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
+      if (state.currentUser && state.currentUser.role === 'admin') {
+        const adBtn = document.createElement('button');
+        adBtn.className = 'btn btn-ghost';
+        adBtn.textContent = '🔧 Админка';
+        adBtn.onclick = () => window.open('/admin.html', '_blank');
+        actionsEl.insertBefore(adBtn, document.getElementById('nav-search-wrap'));
+      }
       $('#nav-profile-btn').addEventListener('click', () => {
         renderProfile();
         navigateTo('profile');
@@ -4148,10 +4155,9 @@
   // ═══════════════════════════════════════════════════════════
 
   let tournamentState = {
-    current: null,       // current tournament object
+    current: null,
     matches: [],
-    players: [],
-    adminCode: null      // set if user opened admin page
+    players: []
   };
 
   const ROUND_NAMES = { 1: 'Четвертьфинал', 2: 'Полуфинал', 3: 'Финал' };
@@ -4207,13 +4213,13 @@
   }
 
   // ── Tournament Lobby / Bracket Screen ─────────────────────────────────
-  function openTournamentLobby(tournamentId, adminCode = null) {
+  function openTournamentLobby(tournamentId, isAdminView = false) {
     socket.emit('get-tournament', { id: tournamentId }, (res) => {
       if (!res || !res.ok) { showToast('Турнир не найден', 'error'); return; }
       tournamentState.current = res.tournament;
       tournamentState.matches = res.matches;
       tournamentState.players = res.players;
-      tournamentState.adminCode = adminCode;
+      // isAdminView indicates we came from the admin dashboard link
 
       // Join the socket room for realtime updates
       socket.emit('join-tournament-room', { tournamentId });
@@ -4245,10 +4251,13 @@
     }
 
     // Admin panel
-    if (tournamentState.adminCode) {
+    if (state.currentUser && state.currentUser.role === 'admin') {
       const adminPanel = document.getElementById('tlobby-admin-panel');
       if (adminPanel) adminPanel.style.display = '';
       renderAdminPanel();
+    } else {
+      const adminPanel = document.getElementById('tlobby-admin-panel');
+      if (adminPanel) adminPanel.style.display = 'none';
     }
 
     // Join button
@@ -4371,10 +4380,7 @@
         const matchId = parseInt(btn.dataset.matchId, 10);
         btn.disabled = true;
         btn.textContent = '⏳ Запуск...';
-        socket.emit('start-tournament-match', {
-          matchId,
-          adminCode: tournamentState.adminCode
-        }, (res) => {
+        socket.emit('start-tournament-match', { matchId }, (res) => {
           if (!res.ok) {
             showToast(res.msg || 'Ошибка', 'error');
             btn.disabled = false;
@@ -4437,15 +4443,15 @@
     }, 1500);
   });
 
-  // Handle ?tournament=ID&adminCode=CODE URL params (from admin panel links)
+  // Handle ?tournament=ID&admin=true URL params (from admin panel links)
   function checkTournamentURLParam() {
     const params = new URLSearchParams(window.location.search);
     const tid = params.get('tournament');
-    const code = params.get('adminCode') || null;
+    const isAdmin = params.get('admin') === 'true';
     if (tid) {
       // Wait for socket to be ready, then open lobby
       setTimeout(() => {
-        openTournamentLobby(parseInt(tid, 10), code);
+        openTournamentLobby(parseInt(tid, 10), isAdmin);
       }, 800);
     }
   }

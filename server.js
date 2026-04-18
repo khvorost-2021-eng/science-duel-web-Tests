@@ -396,11 +396,17 @@ io.on("connection", (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
   // Set user info
-  socket.on("set-user", (data) => {
-    users.set(socket.id, {
-      username: data.username || "Гость",
-      socketId: socket.id,
-    });
+  socket.on("set-user", async (data) => {
+    try {
+      const user = await db.getUser(data.username);
+      users.set(socket.id, {
+        username: user ? user.username : "Гость",
+        socketId: socket.id,
+        role: user ? user.role : 'user'
+      });
+    } catch {
+      users.set(socket.id, { username: "Гость", socketId: socket.id, role: 'user' });
+    }
   });
 
   socket.on('register', async (data, callback) => {
@@ -412,7 +418,7 @@ io.on("connection", (socket) => {
       if (existing) return callback({ ok: false, msg: 'Пользователь уже существует' });
       await db.createUser({ username, password: hashPassword(password) });
       const newUser = await db.getUser(username);
-      users.set(socket.id, { username: newUser.username, socketId: socket.id });
+      users.set(socket.id, { username: newUser.username, socketId: socket.id, role: newUser.role });
       const { password: _, ...userNoPw } = newUser;
       callback({ ok: true, user: userNoPw });
     } catch (e) {
@@ -428,7 +434,7 @@ io.on("connection", (socket) => {
       const user = await db.getUser(username);
       if (!user) return callback({ ok: false, msg: 'Пользователь не найден' });
       if (user.password !== hashPassword(password)) return callback({ ok: false, msg: 'Неверный пароль' });
-      users.set(socket.id, { username: user.username, socketId: socket.id });
+      users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role });
       const { password: _, ...userNoPw } = user;
       callback({ ok: true, user: userNoPw });
     } catch (e) {
@@ -440,7 +446,7 @@ io.on("connection", (socket) => {
     try {
       const user = await db.getUser(data.username);
       if (user) {
-        users.set(socket.id, { username: user.username, socketId: socket.id });
+        users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role });
         const { password: _, ...userNoPw } = user;
         callback({ ok: true, user: userNoPw });
       } else {
@@ -465,6 +471,31 @@ io.on("connection", (socket) => {
       const matches = await db.getMatchHistory(username, limit);
       callback({ ok: true, matches });
     } catch (e) { callback({ ok: false }); }
+  });
+
+  // ══════════════════════════════════════════════════
+  // ADMIN SYSTEM
+  // ══════════════════════════════════════════════════
+
+  socket.on('admin-get-users', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
+    try {
+      const allUsers = await db.getAllUsers();
+      callback({ ok: true, users: allUsers });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('admin-set-role', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
+    try {
+      const { username, role } = data;
+      if (!username || !['admin', 'user'].includes(role)) return callback({ ok: false, msg: 'Invalid payload' });
+      // Prevent removing oneself if they are the only admin (optional safety measure, simple implementation here)
+      await db.updateUserRole(username, role);
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
   });
 
   // ══════════════════════════════════════════════════
@@ -516,20 +547,23 @@ io.on("connection", (socket) => {
   });
 
   socket.on('create-tournament', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
-      const { name, difficulty, adminCode } = data;
-      if (!name || !adminCode) return callback({ ok: false, msg: 'Missing fields' });
-      const t = await db.createTournament({ name, difficulty: difficulty || 'easy', adminCode });
+      const { name, difficulty } = data;
+      if (!name) return callback({ ok: false, msg: 'Missing fields' });
+      const t = await db.createTournament({ name, difficulty: difficulty || 'easy' });
       callback({ ok: true, tournament: t });
     } catch (e) { callback({ ok: false, msg: e.message }); }
   });
 
   socket.on('start-tournament', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
-      const { tournamentId, adminCode } = data;
+      const { tournamentId } = data;
       const t = await db.getTournament(tournamentId);
       if (!t) return callback({ ok: false, msg: 'Not found' });
-      if (t.admin_code !== adminCode) return callback({ ok: false, msg: 'Wrong admin code' });
       const players = await db.getTournamentPlayers(tournamentId);
       if (players.length < 2) return callback({ ok: false, msg: 'Need at least 2 players' });
       const started = await db.startTournament(tournamentId);
@@ -544,13 +578,14 @@ io.on("connection", (socket) => {
 
   // Start a specific pending match — called by admin or automatically
   socket.on('start-tournament-match', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
-      const { matchId, adminCode } = data;
+      const { matchId } = data;
       const matchRes = await db.pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId]);
       const match = matchRes.rows[0];
       if (!match) return callback({ ok: false, msg: 'Match not found' });
       const t = await db.getTournament(match.tournament_id);
-      if (adminCode && t.admin_code !== adminCode) return callback({ ok: false, msg: 'Wrong admin code' });
       if (match.status !== 'pending') return callback({ ok: false, msg: 'Match not ready' });
 
       // Create a duel room for this tournament match

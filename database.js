@@ -22,6 +22,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         password TEXT NOT NULL,
+        role VARCHAR(50) DEFAULT 'user',
         wins INTEGER DEFAULT 0,
         losses INTEGER DEFAULT 0,
         draws INTEGER DEFAULT 0,
@@ -54,6 +55,7 @@ async function initDB() {
 
     // Проверка/добавление новых колонок (миграции)
     const columns = [
+      "role VARCHAR(50) DEFAULT 'user'",
       'bestSolo INTEGER DEFAULT 0',
       'bestResult INTEGER DEFAULT 0',
       'duelGames INTEGER DEFAULT 0',
@@ -128,11 +130,11 @@ async function initDB() {
 
 // ── TOURNAMENT DB FUNCTIONS ──────────────────────────────────────────────
 
-async function createTournament({ name, difficulty = 'easy', adminCode }) {
+async function createTournament({ name, difficulty = 'easy' }) {
   const res = await pool.query(
-    `INSERT INTO tournaments (name, type, status, max_players, difficulty, created_at, admin_code)
-     VALUES ($1, 'olympic', 'waiting', 8, $2, $3, $4) RETURNING *`,
-    [name, difficulty, Date.now(), adminCode]
+    `INSERT INTO tournaments (name, type, status, max_players, difficulty, created_at)
+     VALUES ($1, 'olympic', 'waiting', 8, $2, $3) RETURNING *`,
+    [name, difficulty, Date.now()]
   );
   return res.rows[0];
 }
@@ -290,6 +292,16 @@ async function updateTournamentMatchRoom(matchId, roomCode) {
 
 // ── EXISTING FUNCTIONS ─────────────────────────────────────────────────
 
+async function getAllUsers() {
+  const res = await pool.query('SELECT id, username, role, created, wins, duelGames, soloGames FROM users ORDER BY created DESC');
+  return res.rows;
+}
+
+async function updateUserRole(username, role) {
+  const res = await pool.query('UPDATE users SET role = $1 WHERE LOWER(username) = LOWER($2) RETURNING role', [role, username]);
+  return res.rows[0];
+}
+
 async function getUser(username) {
   const res = await pool.query('SELECT * FROM users WHERE LOWER(username) = LOWER($1)', [username]);
   return res.rows[0];
@@ -391,6 +403,8 @@ module.exports = {
   recordMatchResult,
   getMatchHistory,
   getBestResultsPerMode,
+  getAllUsers,
+  updateUserRole,
   createTournament,
   getTournament,
   listTournaments,
