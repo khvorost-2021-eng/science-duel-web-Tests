@@ -390,5 +390,14 @@ module.exports = {
   getFilteredLeaderboard,
   recordMatchResult,
   getMatchHistory,
-  getBestResultsPerMode
+  getBestResultsPerMode,
+  createTournament,
+  getTournament,
+  listTournaments,
+  joinTournament,
+  getTournamentPlayers,
+  startTournament,
+  getTournamentMatches,
+  recordTournamentMatchResult,
+  updateTournamentMatchRoom
 };
