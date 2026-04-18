@@ -486,7 +486,6 @@ module.exports = {
   getBestResultsPerMode,
   getAllUsers,
   updateUserRole,
-  saveMatch,
   getTournaments,
   createTournament,
   updateTournament,
