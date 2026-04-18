@@ -361,23 +361,49 @@
     if (state.currentUser) {
       const initial = state.currentUser.username.charAt(0).toUpperCase();
       actionsEl.innerHTML = `
-        <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
-        <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
-        <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
-        <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
-        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
-        <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
-        <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
-        <button class="btn btn-ghost" id="nav-tournaments-btn">🏅 Турниры</button>
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-btn">🎯 Игра</button>
+          <div class="nav-dropdown-content">
+            <button class="nav-dropdown-item" id="nav-practice-btn">📝 Практика штурма</button>
+            <button class="nav-dropdown-item" id="nav-bots-btn">🤖 Игра с ботами</button>
+            <button class="nav-dropdown-item" id="nav-tournaments-btn">🏅 Турниры</button>
+          </div>
+        </div>
+        
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-btn">📚 База знаний</button>
+          <div class="nav-dropdown-content">
+            <button class="nav-dropdown-item" id="nav-theory-btn">📖 Теория</button>
+            <button class="nav-dropdown-item" id="nav-rules-btn">📋 Правила</button>
+          </div>
+        </div>
+        
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-btn">🌐 Сообщество</button>
+          <div class="nav-dropdown-content">
+            <button class="nav-dropdown-item" id="nav-leaderboard-btn">🏆 Рейтинг игроков</button>
+            <button class="nav-dropdown-item" id="nav-community-btn">🔵 Телеграм-канал</button>
+          </div>
+        </div>
+        
         <div class="nav-search-wrap" id="nav-search-wrap">
-          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
+          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Искать игрока..." autocomplete="off" />
           <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
         </div>
-        <div class="navbar-user" id="nav-profile-btn" style="cursor:pointer">
-          <div class="user-avatar">${initial}</div>
-          <span>${state.currentUser.username}</span>
+
+        <div class="nav-dropdown">
+          <div class="navbar-user nav-dropdown-btn" style="cursor:pointer;padding:6px 12px">
+            <div class="user-avatar">${initial}</div>
+            <span style="font-weight:600">${state.currentUser.username}</span>
+          </div>
+          <div class="nav-dropdown-content" style="right:0;left:auto;min-width:180px">
+            <button class="nav-dropdown-item" id="nav-profile-btn">👤 Мой профиль</button>
+            <button class="nav-dropdown-item" id="nav-settings-btn">⚙️ Настройки</button>
+            ${state.currentUser.role === 'admin' ? '<button class="nav-dropdown-item" id="nav-admin-btn" style="color:#ef4444">🔧 Админ-панель</button>' : ''}
+            <div style="height:1px;background:var(--border-glass);margin:4px 0"></div>
+            <button class="nav-dropdown-item" id="nav-logout-btn" style="color:#ef4444">🚪 Выйти</button>
+          </div>
         </div>
-        <button class="btn btn-ghost" id="nav-logout-btn">Выйти</button>
       `;
       $('#nav-settings-btn').addEventListener('click', () => { initSettings(); navigateTo('settings'); });
       $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });

@@ -223,8 +223,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: 20px;
   flex: 1;
   max-width: 1200px;
 }
@@ -4064,3 +4063,77 @@ input:checked + .slider:before {
   font-size: 1rem;
 }
 
+
+/* ===========================================
+   NAVBAR DROPDOWNS (Lichess style)
+   =========================================== */
+.nav-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.nav-dropdown-content {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: all 0.2s ease;
+  min-width: 160px;
+  z-index: 200;
+  padding: 8px 0;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.nav-dropdown:hover .nav-dropdown-content {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.nav-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: 0.2s;
+  border-radius: var(--radius-md);
+}
+
+.nav-dropdown-btn:hover {
+  background: var(--bg-glass);
+}
+
+.nav-dropdown-item {
+  padding: 10px 20px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: 0.2s;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 0.95rem;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-dropdown-item:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.06);
+}
