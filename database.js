@@ -138,6 +138,13 @@ async function initDB() {
     `);
     console.log('[DB] Ratings table initialized');
 
+    try {
+      const checkRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='daily_challenges' AND column_name='grade'");
+      if (checkRes.rowCount === 0) {
+         await client.query("DROP TABLE IF EXISTS daily_challenges CASCADE");
+      }
+    } catch(e) {}
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS daily_challenges (
         grade INTEGER PRIMARY KEY,
