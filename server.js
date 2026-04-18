@@ -383,12 +383,8 @@ async function endGame(roomCode) {
       const tournament = await db.getTournament(tid);
       io.to(`tournament-${tid}`).emit('tournament-updated', { tournament, matches, players });
 
-      // Find the next pending match for the winner and start it
-      const nextMatch = matches.find(m => m.status === 'pending' &&
-        (m.player1 === p1.name || m.player1 === p2.name ||
-         m.player2 === p1.name || m.player2 === p2.name) &&
-        m.id !== room.tournamentMatchId);
-      // (Next match will be started manually from client via start-tournament-match)
+      // Automatically start the next round matches if they are now pending
+      await autoStartPendingMatches(tid);
     } catch (err) {
       console.error('[Tournament] Error recording match result:', err);
     }
@@ -683,6 +679,10 @@ io.on("connection", (socket) => {
       const t = await db.getTournament(tournamentId);
       if (!t) return callback({ ok: false, msg: 'Tournament not found' });
       if (t.status !== 'waiting') return callback({ ok: false, msg: 'Tournament already started' });
+      
+      const currentPlayers = await db.getTournamentPlayers(tournamentId);
+      if (currentPlayers.length >= 8) return callback({ ok: false, msg: 'Турнир заполнен (макс. 8 человек)' });
+
       const res = await db.joinTournament(tournamentId, username);
       if (!res.ok) return callback({ ok: false, msg: res.error });
       const players = await db.getTournamentPlayers(tournamentId);
@@ -725,12 +725,58 @@ io.on("connection", (socket) => {
       const started = await db.startTournament(tournamentId);
       const matches = await db.getTournamentMatches(tournamentId);
       const updatedPlayers = await db.getTournamentPlayers(tournamentId);
+      
       io.to(`tournament-${tournamentId}`).emit('tournament-started', {
         tournament: started, matches, players: updatedPlayers
       });
+
+      // Auto-start matches as soon as tournament begins
+      await autoStartPendingMatches(tournamentId);
+
       callback({ ok: true, tournament: started, matches, players: updatedPlayers });
     } catch (e) { console.error(e); callback({ ok: false, msg: e.message }); }
   });
+
+  // Helper to automatically start any pending matches in a tournament
+  async function autoStartPendingMatches(tournamentId) {
+    try {
+      const matches = await db.getTournamentMatches(tournamentId);
+      const pendingMatches = matches.filter(m => m.status === 'pending' && !m.room_code && m.player1 && m.player2);
+      
+      for (const match of pendingMatches) {
+        const code = generateRoomCode();
+        const t = await db.getTournament(tournamentId);
+        
+        rooms.set(code, {
+          code,
+          players: [],
+          difficulty: t.difficulty || 'easy',
+          isRanked: false,
+          gameStarted: false,
+          isRunning: false,
+          problems: [],
+          timeLeft: 90,
+          tournamentMatchId: match.id,
+          tournamentId: tournamentId,
+        });
+        
+        await db.updateTournamentMatchRoom(match.id, code);
+        
+        // Notify players
+        io.to(`tournament-${tournamentId}`).emit('tournament-match-ready', {
+          matchId: match.id,
+          roomCode: code,
+          player1: match.player1,
+          player2: match.player2,
+          round: match.round,
+          matchNumber: match.match_number
+        });
+        console.log(`[Tournament] Auto-started Match ${match.id} (Room: ${code})`);
+      }
+    } catch (e) {
+      console.error('[Tournament] Error in autoStartPendingMatches:', e);
+    }
+  }
 
   // Start a specific pending match — called by admin or automatically
   socket.on('start-tournament-match', async (data, callback) => {
@@ -741,36 +787,14 @@ io.on("connection", (socket) => {
       const matchRes = await db.pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId]);
       const match = matchRes.rows[0];
       if (!match) return callback({ ok: false, msg: 'Match not found' });
-      const t = await db.getTournament(match.tournament_id);
-      if (match.status !== 'pending') return callback({ ok: false, msg: 'Match not ready' });
-
-      // Create a duel room for this tournament match
-      const code = generateRoomCode();
-      rooms.set(code, {
-        code,
-        players: [],
-        difficulty: t.difficulty || 'easy',
-        isRanked: false,
-        gameStarted: false,
-        isRunning: false,
-        problems: [],
-        timeLeft: 90,
-        tournamentMatchId: match.id,
-        tournamentId: match.tournament_id,
-      });
-      await db.updateTournamentMatchRoom(matchId, code);
-
-      // Notify the two players to join the room
-      io.to(`tournament-${match.tournament_id}`).emit('tournament-match-ready', {
-        matchId: match.id,
-        roomCode: code,
-        player1: match.player1,
-        player2: match.player2,
-        round: match.round,
-        matchNumber: match.match_number
-      });
-      callback({ ok: true, roomCode: code });
-    } catch (e) { console.error(e); callback({ ok: false, msg: e.message }); }
+      
+      if (match.status === 'pending' && !match.room_code) {
+        await autoStartPendingMatches(match.tournament_id);
+        callback({ ok: true });
+      } else {
+        callback({ ok: false, msg: 'Match not ready or already started' });
+      }
+    } catch (e) { callback({ ok: false, msg: e.message }); }
   });
 
   socket.on('get-best-results', async (data, callback) => {

@@ -205,7 +205,7 @@ async function getTournamentPlayers(tournamentId) {
 }
 
 async function startTournament(tournamentId) {
-  // Shuffle players and assign seeds 1–8
+  // Shuffle players and assign seeds 1-8
   const players = await getTournamentPlayers(tournamentId);
   const shuffled = players.sort(() => Math.random() - 0.5);
   for (let i = 0; i < shuffled.length; i++) {
@@ -214,18 +214,27 @@ async function startTournament(tournamentId) {
       [i + 1, shuffled[i].id]
     );
   }
-  // Create quarterfinal match skeleton: seed1 vs seed8, 2v7, 3v6, 4v5
+  
   const seedMap = {};
   shuffled.forEach((p, i) => { seedMap[i + 1] = p.username; });
+  
+  // Create quarterfinal match skeleton
   const pairs = [[1,8],[2,7],[3,6],[4,5]];
   for (let i = 0; i < pairs.length; i++) {
     const [s1, s2] = pairs[i];
+    const p1 = seedMap[s1] || null;
+    const p2 = seedMap[s2] || null;
+    let status = 'pending';
+    if (!p1 && !p2) status = 'finished';
+    else if (!p1 || !p2) status = 'finished'; // Automatic bye result calculated below
+
     await pool.query(
-      `INSERT INTO tournament_matches (tournament_id, round, match_number, player1, player2, status)
-       VALUES ($1, 1, $2, $3, $4, 'pending')`,
-      [tournamentId, i + 1, seedMap[s1], seedMap[s2]]
+      `INSERT INTO tournament_matches (tournament_id, round, match_number, player1, player2, status, winner)
+       VALUES ($1, 1, $2, $3, $4, $5, $6)`,
+      [tournamentId, i + 1, p1, p2, status, (!p1 || !p2) ? (p1 || p2) : null]
     );
   }
+  
   // Create empty semifinal and final placeholders
   for (let i = 1; i <= 2; i++) {
     await pool.query(
@@ -240,11 +249,62 @@ async function startTournament(tournamentId) {
     [tournamentId]
   );
 
+  // Process Byes from Round 1 into Round 2
+  const r1Matches = (await pool.query('SELECT * FROM tournament_matches WHERE tournament_id = $1 AND round = 1', [tournamentId])).rows;
+  for (const m of r1Matches) {
+      if (m.status === 'finished' && m.winner) {
+          await advanceWinner(tournamentId, 1, m.match_number, m.winner);
+      }
+  }
+
   await pool.query(
     `UPDATE tournaments SET status = 'active', started_at = $1 WHERE id = $2`,
     [Date.now(), tournamentId]
   );
   return await getTournament(tournamentId);
+}
+
+// Helper to advance winner to the next round
+async function advanceWinner(tournamentId, currentRound, matchNumber, winner) {
+    if (currentRound === 1) {
+        const sfMatchNumber = matchNumber <= 2 ? 1 : 2;
+        const playerSlot = matchNumber % 2 === 1 ? 'player1' : 'player2';
+        await pool.query(
+          `UPDATE tournament_matches SET ${playerSlot} = $1 
+           WHERE tournament_id = $2 AND round = 2 AND match_number = $3`,
+          [winner, tournamentId, sfMatchNumber]
+        );
+        // Check if SF match is now ready
+        const sfRes = await pool.query('SELECT player1, player2 FROM tournament_matches WHERE tournament_id = $1 AND round = 2 AND match_number = $2', [tournamentId, sfMatchNumber]);
+        const sf = sfRes.rows[0];
+        if (sf && sf.player1 && sf.player2) {
+            await pool.query('UPDATE tournament_matches SET status = \'pending\' WHERE tournament_id = $1 AND round = 2 AND match_number = $2', [tournamentId, sfMatchNumber]);
+        } else if (sf && (sf.player1 || sf.player2)) {
+            // Check if there are no more matches in R1 that could fill the other slot
+            // Actually, for simplicity, if currentRound 1 is finishing up, SF will be handled.
+        }
+    } else if (currentRound === 2) {
+        const playerSlot = matchNumber === 1 ? 'player1' : 'player2';
+        await pool.query(
+          `UPDATE tournament_matches SET ${playerSlot} = $1
+           WHERE tournament_id = $2 AND round = 3 AND match_number = 1`,
+          [winner, tournamentId]
+        );
+        const fRes = await pool.query('SELECT player1, player2 FROM tournament_matches WHERE tournament_id = $1 AND round = 3 AND match_number = 1', [tournamentId]);
+        const f = fRes.rows[0];
+        if (f && f.player1 && f.player2) {
+            await pool.query('UPDATE tournament_matches SET status = \'pending\' WHERE tournament_id = $1 AND round = 3 AND match_number = 1', [tournamentId]);
+        }
+    } else if (currentRound === 3) {
+        // Tournament finished
+        const players = await getTournamentPlayers(tournamentId);
+        for (const p of players) {
+            if (p.username === winner) {
+                await pool.query('UPDATE tournament_players SET status = \'winner\' WHERE id = $1', [p.id]);
+            }
+        }
+        await pool.query('UPDATE tournaments SET status = \'finished\', finished_at = $1 WHERE id = $2', [Date.now(), tournamentId]);
+    }
 }
 
 async function getTournamentMatches(tournamentId) {
@@ -274,32 +334,6 @@ async function recordTournamentMatchResult({ matchId, winner, score_p1, score_p2
   );
 
   // Advance winner to next round
-  const tournamentId = match.tournament_id;
-  const round = match.round;
-  const matchNumber = match.match_number;
-
-  if (round === 1) {
-    // QF match 1→SF match 1 player1, QF match 2→SF match 1 player2
-    // QF match 3→SF match 2 player1, QF match 4→SF match 2 player2
-    const sfMatchNumber = matchNumber <= 2 ? 1 : 2;
-    const playerSlot = matchNumber % 2 === 1 ? 'player1' : 'player2';
-    await pool.query(
-      `UPDATE tournament_matches SET ${playerSlot} = $1, status = CASE
-         WHEN player1 IS NOT NULL AND player2 IS NOT NULL THEN 'pending' ELSE 'waiting' END
-       WHERE tournament_id = $2 AND round = 2 AND match_number = $3`,
-      [winner, tournamentId, sfMatchNumber]
-    );
-  } else if (round === 2) {
-    // SF match 1→Final player1, SF match 2→Final player2
-    const playerSlot = matchNumber === 1 ? 'player1' : 'player2';
-    await pool.query(
-      `UPDATE tournament_matches SET ${playerSlot} = $1, status = CASE
-         WHEN player1 IS NOT NULL AND player2 IS NOT NULL THEN 'pending' ELSE 'waiting' END
-       WHERE tournament_id = $2 AND round = 3 AND match_number = 1`,
-      [winner, tournamentId]
-    );
-  } else if (round === 3) {
-    // Tournament finished
     await pool.query(
       `UPDATE tournaments SET status = 'finished', finished_at = $1 WHERE id = $2`,
       [Date.now(), tournamentId]

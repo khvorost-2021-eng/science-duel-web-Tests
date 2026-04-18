@@ -4138,7 +4138,163 @@ input:checked + .slider:before {
   gap: 8px;
 }
 
-.nav-dropdown-item:hover {
-  color: var(--text-primary);
-  background: rgba(255,255,255,0.06);
+/* ═══════════════════════════════════════════
+   ADMIN PANEL REFINEMENTS
+   ═══════════════════════════════════════════ */
+.admin-panel-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px 100px;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-tab-btn {
+  padding: 10px 24px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.admin-section {
+  background: var(--bg-card);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  height: 100%;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.admin-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-user-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.admin-user-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ═══════════════════════════════════════════
+   MOBILE RESPONSIVENESS (OVERRIDE)
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  :root {
+    --nav-h: 70px;
+  }
+
+  .navbar {
+    height: var(--nav-h);
+    padding: 0 16px;
+  }
+
+  .navbar-actions {
+    gap: 8px;
+  }
+
+  .nav-dropdown-btn {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+
+  .navbar-user span {
+    display: none; /* Hide name on very small screens to save space */
+  }
+
+  /* Screens & Containers */
+  .screen {
+    padding-top: var(--nav-h);
+  }
+
+  .container, .admin-panel-container, .profile-container, .leaderboard-container {
+    padding-left: 16px;
+    padding-right: 16px;
+    width: 100%;
+  }
+
+  /* Grids */
+  .stats-grid, .admin-grid, .modes-grid, .records-grid, .records-grid-v2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Admin Tabs */
+  .admin-tabs {
+    justify-content: flex-start;
+    padding-left: 4px;
+  }
+
+  /* Tournament Bracket Mobile Horizontal Scroll */
+  .tournament-bracket {
+    display: block;
+    overflow-x: auto !important;
+    padding-bottom: 20px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bracket-container {
+    min-width: 800px; /* Force minimum width to keep bracket structure intact while scrolling */
+  }
+
+  /* Settings Mobile */
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Profile Mobile */
+  .profile-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-title {
+    font-size: 2rem;
+  }
+
+  .btn {
+    width: 100%; /* Most buttons full width on small phones */
+    justify-content: center;
+  }
+  
+  .nav-dropdown-btn {
+      padding: 6px;
+  }
+  
+  .nav-dropdown-btn span {
+      display: none;
+  }
 }
