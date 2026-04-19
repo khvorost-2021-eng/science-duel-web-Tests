@@ -291,6 +291,8 @@
       if (result && result.ok) {
         state.currentUser = result.user;
         state.myName = result.user.username;
+        // Fix: Ensure the server session is also updated
+        socket.emit('set-user', { username: result.user.username });
         updateNavbar();
         fetchDailyChallenge(); // Added: fetch challenge for logged in user on refresh
       } else {
@@ -3511,7 +3513,8 @@
     const p1 = data.player1;
     const p2 = data.player2;
 
-    const iAmP1 = state.myPlayerSlot === 1;
+    // Use name comparison instead of slot index to avoid join-order dependency
+    const iAmP1 = p1 && p1.name === state.myName;
     const myData = iAmP1 ? p1 : p2;
     const oppData = iAmP1 ? p2 : p1;
 
@@ -3599,11 +3602,14 @@
         }
       }, 5000);
     } else {
-      $('#rematch-btn').addEventListener('click', () => {
-        socket.emit('request-rematch');
-        $('#rematch-btn').textContent = '⏳ Ожидание соперника...';
-        $('#rematch-btn').disabled = true;
-      });
+      const rematchBtn = $('#rematch-btn');
+      if (rematchBtn) {
+        rematchBtn.addEventListener('click', () => {
+          socket.emit('request-rematch');
+          rematchBtn.textContent = '⏳ Ожидание соперника...';
+          rematchBtn.disabled = true;
+        });
+      }
     }
 
     $('#change-mode-btn').addEventListener('click', () => {
@@ -4634,7 +4640,7 @@
       return;
     }
 
-    showToast(`⚔️ Ваш матч начинается! ${ROUND_NAMES[data.round] || 'Раунд ' + data.round}`, 'success');
+    showToast(`⚔️ Ваш матч начинается!`, 'success');
     setTimeout(() => {
       // Bug 1.3 fix: use 'roomCode' key (matching server's data.roomCode parser)
       console.log(`[Tournament] Joining room ${data.roomCode} as ${me}`);

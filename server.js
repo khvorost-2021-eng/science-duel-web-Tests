@@ -487,7 +487,14 @@ io.on("connection", (socket) => {
           await db.updateGrade(user.username, 5);
       }
       
-      users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role, grade: user.grade });
+      users.set(socket.id, { 
+        id: user.id,
+        username: user.username, 
+        socketId: socket.id, 
+        role: user.role, 
+        grade: user.grade,
+        totalSolved: user.totalSolved || 0
+      });
       const { password: _, ...userNoPw } = user;
       
       const userRating = await db.getRatingForGrade(user.id, user.grade);
@@ -511,7 +518,14 @@ io.on("connection", (socket) => {
             user.grade = 5;
             await db.updateGrade(user.username, 5);
         }
-        users.set(socket.id, { username: user.username, socketId: socket.id, role: user.role, grade: user.grade });
+        users.set(socket.id, { 
+          id: user.id,
+          username: user.username, 
+          socketId: socket.id, 
+          role: user.role, 
+          grade: user.grade,
+          totalSolved: user.totalSolved || 0
+        });
         const { password: _, ...userNoPw } = user;
         
         const userRating = await db.getRatingForGrade(user.id, user.grade);
@@ -521,21 +535,21 @@ io.on("connection", (socket) => {
         
         callback({ ok: true, user: userNoPw });
       } else {
-        callback({ ok: false });
+        callback({ ok: false, msg: 'Пользователь не найден' });
       }
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка сервера' }); }
   });
 
   socket.on('update-grade', async (data, callback) => {
     try {
       const u = users.get(socket.id);
-      if (!u || !u.username) return callback({ ok: false, msg: 'Not logged in' });
+      if (!u || !u.username) return callback({ ok: false, msg: 'Вы не авторизованы' });
       const { grade } = data;
       const gNum = parseInt(grade);
-      if (isNaN(gNum) || gNum < 5 || gNum > 11) return callback({ ok: false, msg: 'Invalid grade' });
+      if (isNaN(gNum) || gNum < 5 || gNum > 11) return callback({ ok: false, msg: 'Некорректный класс' });
       
       const dbUser = await db.getUser(u.username);
-      if (!dbUser) return callback({ ok: false, msg: 'User not found' });
+      if (!dbUser) return callback({ ok: false, msg: 'Пользователь не найден' });
       
       await db.updateGrade(u.username, gNum);
       u.grade = gNum;
@@ -548,7 +562,7 @@ io.on("connection", (socket) => {
       userNoPw.glicko_vol = userRating.volatility;
       
       callback({ ok: true, user: userNoPw });
-    } catch (e) { callback({ ok: false, msg: 'Error updating grade' }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка обновления класса' }); }
   });
 
   socket.on('get-leaderboard', async (data, callback) => {
@@ -556,7 +570,7 @@ io.on("connection", (socket) => {
       const grade = data && data.grade ? parseInt(data.grade) : 5;
       const leaderboard = await db.getLeaderboardByGrade(grade);
       callback({ ok: true, leaderboard });
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения рейтинга' }); }
   });
 
   socket.on('get-daily-challenge', async (data, callback) => {
@@ -568,26 +582,36 @@ io.on("connection", (socket) => {
 
       let challenge = await db.getDailyChallenge(grade);
       if (!challenge) {
-        const res = await db.pool.query('SELECT text, grade FROM daily_challenges_v2 ORDER BY created_at DESC LIMIT 1');
+        // Fallback: get any latest challenge (fix: use updated_at, NOT created_at)
+        const res = await db.pool.query('SELECT text, grade, updated_at FROM daily_challenges_v2 ORDER BY updated_at DESC LIMIT 1');
         if (res.rows.length > 0) challenge = res.rows[0];
       }
 
-      if (challenge) {
-        callback({ ok: true, challenge: { text: challenge.text, grade: challenge.grade } });
-      } else {
-        callback({ ok: false, msg: 'No challenge found' });
+      let alreadySolved = false;
+      if (u && challenge) {
+        alreadySolved = await db.hasUserSolvedChallenge(u.id, challenge.grade, challenge.updated_at);
       }
-    } catch (e) { callback({ ok: false }); }
+
+      if (challenge) {
+        callback({ 
+          ok: true, 
+          challenge: { text: challenge.text, grade: challenge.grade },
+          alreadySolved 
+        });
+      } else {
+        callback({ ok: false, msg: 'Сегодня задачи пока нет' });
+      }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка сервера' }); }
   });
 
   socket.on('submit-daily-challenge', async (data, callback) => {
     try {
       const u = users.get(socket.id);
-      if (!u) return callback({ ok: false, msg: 'Not logged in' });
+      if (!u) return callback({ ok: false, msg: 'Вы не авторизованы' });
       const { answer } = data;
       const grade = parseInt(u.grade) || 5;
       const challenge = await db.getDailyChallenge(grade);
-      if (!challenge) return callback({ ok: false, msg: 'No challenge today' });
+      if (!challenge) return callback({ ok: false, msg: 'На сегодня задач нет' });
       
       const alreadySolved = await db.hasUserSolvedChallenge(u.id, grade, challenge.updated_at);
       if (alreadySolved) return callback({ ok: false, msg: 'Вы уже решили эту задачу!' });
@@ -603,7 +627,7 @@ io.on("connection", (socket) => {
       }
     } catch (e) { 
       console.error('[Server] submit-daily-challenge error:', e);
-      callback({ ok: false, msg: 'Server error' }); 
+      callback({ ok: false, msg: 'Ошибка сервера' }); 
     }
   });
 
@@ -622,10 +646,10 @@ io.on("connection", (socket) => {
     try {
       const username = data && data.username;
       const limit = (data && data.limit) || 10;
-      if (!username) return callback({ ok: false, msg: 'No username' });
+      if (!username) return callback({ ok: false, msg: 'Имя пользователя не указано' });
       const matches = await db.getMatchHistory(username, limit);
       callback({ ok: true, matches });
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения истории' }); }
   });
 
   // ══════════════════════════════════════════════════
@@ -634,7 +658,7 @@ io.on("connection", (socket) => {
 
   socket.on('admin-get-users', async (data, callback) => {
     const u = users.get(socket.id);
-    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
       const { search } = data || {};
       let allUsers = await db.getAllUsers();
@@ -643,36 +667,36 @@ io.on("connection", (socket) => {
         allUsers = allUsers.filter(user => user.username.toLowerCase().includes(query));
       }
       callback({ ok: true, users: allUsers });
-    } catch (e) { callback({ ok: false, msg: e.message }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения списка пользователей' }); }
   });
 
   socket.on('admin-set-role', async (data, callback) => {
     const u = users.get(socket.id);
-    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
       const { username, role } = data;
-      if (!username || !['admin', 'user'].includes(role)) return callback({ ok: false, msg: 'Invalid payload' });
+      if (!username || !['admin', 'user'].includes(role)) return callback({ ok: false, msg: 'Некорректные данные' });
       await db.updateUserRole(username, role);
       callback({ ok: true });
-    } catch (e) { callback({ ok: false, msg: e.message }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка обновления роли' }); }
   });
 
   socket.on('admin-delete-user', async (data, callback) => {
     const u = users.get(socket.id);
-    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Access denied' });
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
       const { username } = data;
-      if (!username) return callback({ ok: false, msg: 'No username provided' });
+      if (!username) return callback({ ok: false, msg: 'Имя пользователя не указано' });
       await db.deleteUser(username);
       // Kick them if they are online
       for (const [sid, user] of users.entries()) {
         if (user.username.toLowerCase() === username.toLowerCase()) {
-          io.to(sid).emit('kicked-from-game', { msg: 'Ваш аккаунт был удален администратором.' });
+          io.to(sid).emit('kicked-from-game', { msg: 'Ваш аккаунт был удалён администратором.' });
           io.sockets.sockets.get(sid)?.disconnect(true);
         }
       }
       callback({ ok: true });
-    } catch (e) { callback({ ok: false, msg: e.message }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка при удалении пользователя' }); }
   });
 
   // ══════════════════════════════════════════════════
@@ -694,11 +718,11 @@ io.on("connection", (socket) => {
   socket.on('get-tournament', async (data, callback) => {
     try {
       const t = await db.getTournament(data.id);
-      if (!t) return callback({ ok: false, msg: 'Not found' });
+      if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
       const matches = await db.getTournamentMatches(data.id);
       const players = await db.getTournamentPlayers(data.id);
       callback({ ok: true, tournament: t, matches, players });
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения турнира' }); }
   });
 
   socket.on('join-tournament-room', (data) => {
@@ -710,10 +734,10 @@ io.on("connection", (socket) => {
   socket.on('join-tournament', async (data, callback) => {
     try {
       const { tournamentId, username } = data;
-      if (!username) return callback({ ok: false, msg: 'Not logged in' });
+      if (!username) return callback({ ok: false, msg: 'Вы не авторизованы' });
       const t = await db.getTournament(tournamentId);
-      if (!t) return callback({ ok: false, msg: 'Tournament not found' });
-      if (t.status !== 'waiting') return callback({ ok: false, msg: 'Tournament already started' });
+      if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
+      if (t.status !== 'waiting') return callback({ ok: false, msg: 'Турнир уже начался' });
       
       const currentPlayers = await db.getTournamentPlayers(tournamentId);
       if (currentPlayers.length >= 8) return callback({ ok: false, msg: 'Турнир заполнен (макс. 8 человек)' });
@@ -724,7 +748,7 @@ io.on("connection", (socket) => {
       // Broadcast updated player list to everyone watching
       io.to(`tournament-${tournamentId}`).emit('tournament-players-updated', { players });
       callback({ ok: true, players });
-    } catch (e) { callback({ ok: false, msg: e.message }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка участия в турнире' }); }
   });
 
   socket.on('create-tournament', async (data, callback) => {
@@ -732,10 +756,10 @@ io.on("connection", (socket) => {
     if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
       const { name, difficulty } = data;
-      if (!name) return callback({ ok: false, msg: 'Missing fields' });
+      if (!name) return callback({ ok: false, msg: 'Укажите название турнира' });
       const t = await db.createTournament({ name, difficulty: difficulty || 'easy' });
       callback({ ok: true, tournament: t });
-    } catch (e) { callback({ ok: false, msg: e.message }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка создания турнира' }); }
   });
 
   socket.on('admin-cancel-tournament', async (data, callback) => {
@@ -754,9 +778,9 @@ io.on("connection", (socket) => {
     try {
       const { tournamentId } = data;
       const t = await db.getTournament(tournamentId);
-      if (!t) return callback({ ok: false, msg: 'Not found' });
+      if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
       const players = await db.getTournamentPlayers(tournamentId);
-      if (players.length < 2) return callback({ ok: false, msg: 'Need at least 2 players' });
+      if (players.length < 2) return callback({ ok: false, msg: 'Минимум 2 участника для запуска' });
       const started = await db.startTournament(tournamentId);
       const matches = await db.getTournamentMatches(tournamentId);
       const updatedPlayers = await db.getTournamentPlayers(tournamentId);
