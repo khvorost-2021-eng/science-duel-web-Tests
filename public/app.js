@@ -197,46 +197,75 @@
   function setCurrentUser(user) {
     state.currentUser = user;
     if (user) {
+      // ── Bug 1.1 fix: always sync myName so tournament-match-ready works for admin too ──
+      state.myName = user.username;
       localStorage.setItem('sciduel_current', user.username);
       socket.emit('set-user', { username: user.username });
       fetchDailyChallenge();
     } else {
+      state.myName = '';
       localStorage.removeItem('sciduel_current');
-      $('#daily-challenge-form').style.display = 'none';
-      $('#daily-challenge-text').textContent = 'Пожалуйста, авторизуйтесь, чтобы увидеть олимпиадную задачу для вашего класса.';
+      // ── Bug 1.2 fix: show challenge for default grade when logged out ──
+      fetchDailyChallenge();
       $('#daily-challenge-result').style.display = 'none';
     }
     updateNavbar();
   }
+
+  // ── Bug 1.2: fetch daily challenge for any visitor (auth or not) ──
   function fetchDailyChallenge() {
-    if (!state.currentUser || !state.currentUser.grade) return;
-    socket.emit('get-daily-challenge', { grade: state.currentUser.grade }, (res) => {
+    const grade = (state.currentUser && state.currentUser.grade) ? state.currentUser.grade : 5;
+    const isLoggedIn = !!state.currentUser;
+
+    console.log(`[DailyChallenge] Fetching for grade=${grade}, loggedIn=${isLoggedIn}`);
+
+    socket.emit('get-daily-challenge', { grade }, (res) => {
       if (res.ok && res.challenge && res.challenge.text) {
         $('#daily-challenge-text').textContent = res.challenge.text;
-        $('#daily-challenge-form').style.display = 'flex';
-        
-        $('#daily-challenge-submit').onclick = () => {
-          const answer = $('#daily-challenge-input').value.trim();
-          if (!answer) return;
-          
-          socket.emit('submit-daily-challenge', { answer }, (subRes) => {
-            if (subRes.ok) {
-               $('#daily-challenge-result').textContent = '✅ Правильно! Вы заработали +1 в статистику!';
-               $('#daily-challenge-result').style.color = 'var(--success)';
-               $('#daily-challenge-result').style.display = 'block';
-               showToast('Верный ответ!', 'success');
-               // Refresh user data to show new totalSolved
-               loadCurrentUser();
-            } else {
-               $('#daily-challenge-result').textContent = '❌ ' + (subRes.msg || 'Неверный ответ. Попробуйте ещё раз!');
-               $('#daily-challenge-result').style.color = 'var(--danger)';
-               $('#daily-challenge-result').style.display = 'block';
-               setTimeout(() => { $('#daily-challenge-result').style.display = 'none'; }, 4000);
-            }
-          });
-        };
+
+        if (isLoggedIn) {
+          // Logged-in users see the form and can submit
+          $('#daily-challenge-form').style.display = 'flex';
+          const submitBtn = $('#daily-challenge-submit');
+          submitBtn.disabled = false;
+          submitBtn.title = '';
+
+          submitBtn.onclick = () => {
+            const answer = $('#daily-challenge-input').value.trim();
+            if (!answer) return;
+
+            socket.emit('submit-daily-challenge', { answer }, (subRes) => {
+              if (subRes.ok) {
+                 $('#daily-challenge-result').textContent = '✅ Правильно! Вы заработали +1 в статистику!';
+                 $('#daily-challenge-result').style.color = 'var(--success)';
+                 $('#daily-challenge-result').style.display = 'block';
+                 showToast('Верный ответ!', 'success');
+                 loadCurrentUser();
+              } else {
+                 $('#daily-challenge-result').textContent = '❌ ' + (subRes.msg || 'Неверный ответ. Попробуйте ещё раз!');
+                 $('#daily-challenge-result').style.color = 'var(--danger)';
+                 $('#daily-challenge-result').style.display = 'block';
+                 setTimeout(() => { $('#daily-challenge-result').style.display = 'none'; }, 4000);
+              }
+            });
+          };
+        } else {
+          // Guest users can see the task but can't submit — button redirects to login
+          $('#daily-challenge-form').style.display = 'flex';
+          const submitBtn = $('#daily-challenge-submit');
+          submitBtn.disabled = false;
+          submitBtn.title = 'Войдите, чтобы отправить ответ';
+          submitBtn.onclick = () => {
+            showToast('Войдите, чтобы ответить на задачу!', 'info');
+            openModal('login');
+          };
+        }
       } else {
-        $('#daily-challenge-text').textContent = `К сожалению, для ${state.currentUser.grade} класса пока нет новой задачи.`;
+        if (isLoggedIn) {
+          $('#daily-challenge-text').textContent = `К сожалению, для ${grade} класса пока нет новой задачи.`;
+        } else {
+          $('#daily-challenge-text').textContent = 'Задача дня скоро появится. Следите за обновлениями!';
+        }
         $('#daily-challenge-form').style.display = 'none';
       }
     });
@@ -4178,6 +4207,11 @@
   function init() {
     MathKeyboard.init();
     loadCurrentUser();
+    // ── Bug 1.2 fix: fetch daily challenge for all visitors (including guests) ──
+    // loadCurrentUser calls fetchDailyChallenge on success; this one handles guests:
+    if (!localStorage.getItem('sciduel_current')) {
+      fetchDailyChallenge();
+    }
     initParticles();
     initQuotes();
     navigateTo('home');
@@ -4543,21 +4577,35 @@
     }
   });
 
-  // When admin starts a match, the two players get redirected automatically
+  // ── Bug 1.3: Tournament match auto-join fix ──
+  // When server signals match ready, both players join the room automatically
   socket.on('tournament-match-ready', (data) => {
-    const me = state.myName;
-    if (me !== data.player1 && me !== data.player2) return;
+    // Bug 1.1 fix: use state.currentUser.username as fallback if myName is empty
+    const me = state.myName || (state.currentUser && state.currentUser.username) || '';
+    console.log(`[Tournament] match-ready event: player1=${data.player1}, player2=${data.player2}, me=${me}, roomCode=${data.roomCode}`);
 
-    showToast(`⚔️ Ваш матч начинается! ${ROUND_NAMES[data.round]}`, 'success');
+    if (!me || (me !== data.player1 && me !== data.player2)) {
+      console.log(`[Tournament] Not my match, skipping. me='${me}'`);
+      return;
+    }
+
+    showToast(`⚔️ Ваш матч начинается! ${ROUND_NAMES[data.round] || 'Раунд ' + data.round}`, 'success');
     setTimeout(() => {
-      // Join the room as a player
-      socket.emit('join-room', { code: data.roomCode, username: me }, (res) => {
-        if (res && res.ok) {
+      // Bug 1.3 fix: use 'roomCode' key (matching server's data.roomCode parser)
+      console.log(`[Tournament] Joining room ${data.roomCode} as ${me}`);
+      socket.emit('join-room', { roomCode: data.roomCode, playerName: me });
+      // join-room doesn't use a callback — navigate on room-update event
+      // A one-time listener to catch the room-update for this match
+      const onRoomUpdate = (roomData) => {
+        if (roomData.code === data.roomCode) {
+          socket.off('room-update', onRoomUpdate);
+          console.log(`[Tournament] Successfully joined room ${data.roomCode}, navigating to lobby`);
           navigateTo('lobby');
-        } else {
-          showToast('Не удалось войти в матч', 'error');
         }
-      });
+      };
+      socket.on('room-update', onRoomUpdate);
+      // Cleanup listener if room never responds
+      setTimeout(() => socket.off('room-update', onRoomUpdate), 10000);
     }, 1500);
   });
 

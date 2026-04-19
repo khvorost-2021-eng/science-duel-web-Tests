@@ -758,15 +758,19 @@ io.on("connection", (socket) => {
           code,
           players: [],
           difficulty: t.difficulty || 'easy',
+          duration: 90, // ── Bug 1.3 fix: tournament rooms need a duration set ──
           isRanked: false,
           gameStarted: false,
           isRunning: false,
           problems: [],
           timeLeft: 90,
+          chat: [],
           tournamentMatchId: match.id,
           tournamentId: match.tournament_id,
         });
         await db.updateTournamentMatchRoom(match.id, code);
+
+        console.log(`[Tournament] Room ${code} created for match #${match.id}: ${match.player1} vs ${match.player2} (round ${match.round})`);
 
         io.to(`tournament-${match.tournament_id}`).emit('tournament-match-ready', {
           matchId: match.id,
@@ -776,7 +780,9 @@ io.on("connection", (socket) => {
           round: match.round,
           matchNumber: match.match_number
         });
-        console.log(`[Tournament] Auto-started match ${match.id} (Room: ${code})`);
+
+        const roomSockets = io.sockets.adapter.rooms.get(`tournament-${match.tournament_id}`);
+        console.log(`[Tournament] Emitted match-ready to ${roomSockets ? roomSockets.size : 0} socket(s) in tournament-${match.tournament_id}`);
       }
     } catch (e) {
       console.error('[Tournament] Error in auto-start:', e);
@@ -869,6 +875,8 @@ io.on("connection", (socket) => {
     const code = (data.roomCode || "").toUpperCase().trim();
     const room = rooms.get(code);
 
+    console.log(`[Room] join-room called: code=${code}, playerName=${data.playerName}, tournamentMatch=${room ? room.tournamentMatchId : 'N/A'}`);
+
     if (!room) {
       socket.emit("join-error", { message: "Комната не найдена" });
       return;
@@ -879,6 +887,23 @@ io.on("connection", (socket) => {
     }
     if (room.isRunning) {
       socket.emit("join-error", { message: "Игра уже в процессе" });
+      return;
+    }
+
+    // Reconnect guard — if a player with the same name is already in the room, update their socketId
+    const existingPlayer = room.players.find(p => p.name === (data.playerName || ''));
+    if (existingPlayer) {
+      console.log(`[Room] ${data.playerName} re-joined room ${code}, updating socketId`);
+      existingPlayer.socketId = socket.id;
+      socket.join(code);
+      socket.roomCode = code;
+      io.to(code).emit("room-update", {
+        code: room.code,
+        players: room.players.map(p => ({ name: p.name, slot: p.slot })),
+        difficulty: room.difficulty,
+        duration: room.duration || 90,
+        chat: room.chat || []
+      });
       return;
     }
 
@@ -899,12 +924,25 @@ io.on("connection", (socket) => {
       code: room.code,
       players: room.players.map(p => ({ name: p.name, slot: p.slot })),
       difficulty: room.difficulty,
-      duration: room.duration,
-      chat: room.chat
+      duration: room.duration || 90,
+      chat: room.chat || []
     });
 
-    console.log(`[Room] ${player.name} joined ${code} (Total: ${room.players.length}/10)`);
+    console.log(`[Room] ${player.name} joined ${code} (Total: ${room.players.length}/10)${room.tournamentMatchId ? ` [Tournament match #${room.tournamentMatchId}]` : ''}`);
+
+    // ── Bug 1.3 fix: Auto-start tournament rooms when both players have joined ──
+    if (room.tournamentMatchId && room.players.length === 2 && !room.isRunning) {
+      console.log(`[Tournament] Both players joined room ${code} (match #${room.tournamentMatchId}), auto-starting in 2s...`);
+      setTimeout(() => {
+        const currentRoom = rooms.get(code);
+        if (currentRoom && currentRoom.players.length === 2 && !currentRoom.isRunning) {
+          console.log(`[Tournament] Auto-starting game in room ${code}`);
+          startGame(code);
+        }
+      }, 2000);
+    }
   });
+
 
   socket.on("send-chat-message", (data) => {
     const room = rooms.get(socket.roomCode);
