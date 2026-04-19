@@ -421,47 +421,51 @@
     if (state.currentUser) {
       const initial = state.currentUser.username.charAt(0).toUpperCase();
       actionsEl.innerHTML = `
-        <div class="nav-dropdown">
-          <button class="nav-dropdown-btn">🎯 Игра</button>
-          <div class="nav-dropdown-content">
-            <button class="nav-dropdown-item" id="nav-practice-btn">📝 Практика штурма</button>
-            <button class="nav-dropdown-item" id="nav-bots-btn">🤖 Игра с ботами</button>
-            <button class="nav-dropdown-item" id="nav-tournaments-btn">🏅 Турниры</button>
+        <div class="navbar-menu">
+          <div class="nav-dropdown">
+            <button class="nav-dropdown-btn">🎯 Игра</button>
+            <div class="nav-dropdown-content">
+              <button class="nav-dropdown-item" id="nav-practice-btn">📝 Практика штурма</button>
+              <button class="nav-dropdown-item" id="nav-bots-btn">🤖 Игра с ботами</button>
+              <button class="nav-dropdown-item" id="nav-tournaments-btn">🏅 Турниры</button>
+            </div>
+          </div>
+          
+          <div class="nav-dropdown">
+            <button class="nav-dropdown-btn">📚 База знаний</button>
+            <div class="nav-dropdown-content">
+              <button class="nav-dropdown-item" id="nav-theory-btn">📖 Теория</button>
+              <button class="nav-dropdown-item" id="nav-rules-btn">📋 Правила</button>
+            </div>
+          </div>
+          
+          <div class="nav-dropdown">
+            <button class="nav-dropdown-btn">🌐 Сообщество</button>
+            <div class="nav-dropdown-content">
+              <button class="nav-dropdown-item" id="nav-leaderboard-btn">🏆 Рейтинг игроков</button>
+              <button class="nav-dropdown-item" id="nav-community-btn">🔵 Телеграм-канал</button>
+            </div>
           </div>
         </div>
         
-        <div class="nav-dropdown">
-          <button class="nav-dropdown-btn">📚 База знаний</button>
-          <div class="nav-dropdown-content">
-            <button class="nav-dropdown-item" id="nav-theory-btn">📖 Теория</button>
-            <button class="nav-dropdown-item" id="nav-rules-btn">📋 Правила</button>
+        <div class="navbar-right">
+          <div class="nav-search-wrap" id="nav-search-wrap">
+            <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Искать игрока..." autocomplete="off" />
+            <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
           </div>
-        </div>
-        
-        <div class="nav-dropdown">
-          <button class="nav-dropdown-btn">🌐 Сообщество</button>
-          <div class="nav-dropdown-content">
-            <button class="nav-dropdown-item" id="nav-leaderboard-btn">🏆 Рейтинг игроков</button>
-            <button class="nav-dropdown-item" id="nav-community-btn">🔵 Телеграм-канал</button>
-          </div>
-        </div>
-        
-        <div class="nav-search-wrap" id="nav-search-wrap">
-          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Искать игрока..." autocomplete="off" />
-          <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
-        </div>
 
-        <div class="nav-dropdown">
-          <div class="navbar-user nav-dropdown-btn" style="cursor:pointer;padding:6px 12px">
-            <div class="user-avatar">${initial}</div>
-            <span style="font-weight:600">${state.currentUser.username}</span>
-          </div>
-          <div class="nav-dropdown-content" style="right:0;left:auto;min-width:180px">
-            <button class="nav-dropdown-item" id="nav-profile-btn">👤 Мой профиль</button>
-            <button class="nav-dropdown-item" id="nav-settings-btn">⚙️ Настройки</button>
-            ${state.currentUser.role === 'admin' ? '<button class="nav-dropdown-item" id="nav-admin-btn" style="color:#ef4444">🔧 Админ-панель</button>' : ''}
-            <div style="height:1px;background:var(--border-glass);margin:4px 0"></div>
-            <button class="nav-dropdown-item" id="nav-logout-btn" style="color:#ef4444">🚪 Выйти</button>
+          <div class="nav-dropdown">
+            <div class="navbar-user nav-dropdown-btn" style="cursor:pointer;padding:6px 12px">
+              <div class="user-avatar">${initial}</div>
+              <span class="user-name-text" style="font-weight:600">${state.currentUser.username}</span>
+            </div>
+            <div class="nav-dropdown-content" style="right:0;left:auto;min-width:180px">
+              <button class="nav-dropdown-item" id="nav-profile-btn">👤 Мой профиль</button>
+              <button class="nav-dropdown-item" id="nav-settings-btn">⚙️ Настройки</button>
+              ${state.currentUser.role === 'admin' ? '<button class="nav-dropdown-item" id="nav-admin-btn" style="color:#ef4444">🔧 Админ-панель</button>' : ''}
+              <div style="height:1px;background:var(--border-glass);margin:4px 0"></div>
+              <button class="nav-dropdown-item" id="nav-logout-btn" style="color:#ef4444">🚪 Выйти</button>
+            </div>
           </div>
         </div>
       `;
@@ -3561,18 +3565,32 @@
         </div>
 
         <div class="results-actions">
-          <button class="btn btn-primary btn-lg" id="rematch-btn">🔄 Реванш</button>
+          ${data.isTournament ? `<button class="btn btn-primary btn-lg" id="return-tournament-btn">🏆 Вернуться к турниру</button>` : `<button class="btn btn-primary btn-lg" id="rematch-btn">🔄 Реванш</button>`}
           <button class="btn btn-secondary btn-lg" id="change-mode-btn">⚙️ Выбрать другой режим</button>
           <button class="btn btn-ghost" id="results-home-btn">На главную</button>
         </div>
       </div>
     `;
 
-    $('#rematch-btn').addEventListener('click', () => {
-      socket.emit('request-rematch');
-      $('#rematch-btn').textContent = '⏳ Ожидание соперника...';
-      $('#rematch-btn').disabled = true;
-    });
+    if (data.isTournament) {
+      $('#return-tournament-btn').addEventListener('click', () => {
+        state.roomCode = null;
+        openTournamentLobby(data.tournamentId);
+      });
+      // Авто-возврат в сетку через 5 секунд
+      setTimeout(() => {
+        if (state.roomCode === data.roomCode) { // Still on this result screen roughly
+          state.roomCode = null;
+          openTournamentLobby(data.tournamentId);
+        }
+      }, 5000);
+    } else {
+      $('#rematch-btn').addEventListener('click', () => {
+        socket.emit('request-rematch');
+        $('#rematch-btn').textContent = '⏳ Ожидание соперника...';
+        $('#rematch-btn').disabled = true;
+      });
+    }
 
     $('#change-mode-btn').addEventListener('click', () => {
       renderDuelSetup();
@@ -4453,8 +4471,7 @@
         <div class="tp-row">
           <div class="tp-seed">#${i + 1}</div>
           <div class="tp-avatar">${initial}</div>
-          <div class="tp-name">${p.username}</div>
-          <div class="tp-record">${p.wins}W / ${p.losses}L</div>
+          <div class="tp-name" style="flex:1">${p.username}</div>
           <div class="tp-status">${statusIcon}</div>
         </div>
       `;
@@ -4479,8 +4496,8 @@
       return `
         <div class="bracket-match">
           ${statusBadge}
-          <div class="bracket-player ${winnerClass1}">${p1}<span class="bracket-score">${m.score_p1 || 0}</span></div>
-          <div class="bracket-player ${winnerClass2}">${p2}<span class="bracket-score">${m.score_p2 || 0}</span></div>
+          <div class="bracket-player ${winnerClass1}">${p1}<span class="bracket-score">${m.score_p1 !== null ? m.score_p1 : ''}</span></div>
+          <div class="bracket-player ${winnerClass2}">${p2}<span class="bracket-score">${m.score_p2 !== null ? m.score_p2 : ''}</span></div>
         </div>
       `;
     };

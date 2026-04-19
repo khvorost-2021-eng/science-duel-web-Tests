@@ -305,6 +305,8 @@ async function endGame(roomCode) {
   const payload = {
     isSolo,
     isRanked: room.isRanked,
+    isTournament: !!room.tournamentMatchId,
+    tournamentId: room.tournamentId,
     player1: p1 ? { name: p1.name, score: p1.score, ratingDelta: p1RatingDelta, rating: p1RatingInfo.rating } : null,
     player2: !isSolo ? { name: p2.name, score: p2.score, ratingDelta: p2RatingDelta, rating: p2RatingInfo.rating } : null,
   };
@@ -547,7 +549,12 @@ io.on("connection", (socket) => {
       grade = parseInt(grade); // Ensure it's a number
       if (isNaN(grade)) grade = 5;
 
-      const challenge = await db.getDailyChallenge(grade);
+      let challenge = await db.getDailyChallenge(grade);
+      if (!challenge) {
+        const res = await db.pool.query('SELECT text, grade FROM daily_challenges_v2 ORDER BY created_at DESC LIMIT 1');
+        if (res.rows.length > 0) challenge = res.rows[0];
+      }
+
       if (challenge) {
         callback({ ok: true, challenge: { text: challenge.text, grade: challenge.grade } });
       } else {

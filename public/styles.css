@@ -159,8 +159,15 @@ body::before {
     margin-left: auto;
   }
   
+  /* Navbar Actions wrap the hamburger menu items AND the persistent right-side tools */
   .navbar-actions {
-    display: none !important;
+    margin-left: 10px;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+
+  .navbar-menu {
+    display: none;
     position: absolute;
     top: 100%;
     left: 0;
@@ -173,8 +180,19 @@ body::before {
     z-index: 1000;
   }
 
-  .navbar.nav-open .navbar-actions {
-    display: flex !important;
+  .navbar.nav-open .navbar-menu {
+    display: flex;
+  }
+
+  /* Keep right tools compact */
+  .navbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .nav-search-input {
+    width: 120px !important; 
   }
 
   body.in-game .navbar {
@@ -226,11 +244,22 @@ body::before {
 .navbar-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* Change to space-between for wider reach */
-  gap: 24px;
+  justify-content: space-between;
   flex: 1;
   margin-left: 60px;
   height: 100%;
+}
+
+.navbar-menu {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .navbar-user {
