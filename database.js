@@ -63,7 +63,9 @@ async function initDB() {
       'soloGames INTEGER DEFAULT 0',
       'glicko_rating REAL DEFAULT 1500',
       'glicko_rd REAL DEFAULT 350',
-      'glicko_vol REAL DEFAULT 0.06'
+      'glicko_vol REAL DEFAULT 0.06',
+      'xp INTEGER DEFAULT 0',
+      'trophies INTEGER DEFAULT 0'
     ];
 
     for (const colDef of columns) {
@@ -87,7 +89,8 @@ async function initDB() {
         created_at  BIGINT,
         started_at  BIGINT,
         finished_at BIGINT,
-        admin_code  VARCHAR(64)
+        admin_code  VARCHAR(64),
+        is_ranked   BOOLEAN      DEFAULT FALSE
       )
     `);
 
@@ -145,6 +148,43 @@ async function initDB() {
       )
     `);
     console.log('[DB] Daily challenge solves table ready');
+    
+    // Новая колонка match_uuid для группировки результатов
+    try {
+      await client.query(`ALTER TABLE match_results ADD COLUMN IF NOT EXISTS match_uuid VARCHAR(64)`);
+    } catch (e) { console.warn('[DB] match_uuid migration:', e.message); }
+
+    // Таблица пораундной истории
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS match_turns (
+        id             SERIAL PRIMARY KEY,
+        match_uuid     VARCHAR(64) NOT NULL,
+        turn_num       INTEGER NOT NULL,
+        question       TEXT NOT NULL,
+        p1_username    VARCHAR(255),
+        p1_answer      TEXT,
+        p2_username    VARCHAR(255),
+        p2_answer      TEXT,
+        correct_answer TEXT NOT NULL,
+        created_at     BIGINT
+      )
+    `);
+    
+    // Таблица рейтингов для турниров (отдельная от дуэлей)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tournament_ratings (
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        grade INTEGER,
+        rating REAL NOT NULL,
+        rd REAL NOT NULL,
+        volatility REAL NOT NULL,
+        matches_played INTEGER DEFAULT 0,
+        updated_at BIGINT,
+        PRIMARY KEY(user_id, grade)
+      )
+    `);
+
+    console.log('[DB] History and Tournament rating tables ready');
     console.log('[DB] Daily challenges table initialized');
 
   } finally {
@@ -154,11 +194,11 @@ async function initDB() {
 
 // ── TOURNAMENT DB FUNCTIONS ──────────────────────────────────────────────
 
-async function createTournament({ name, difficulty = 'easy' }) {
+async function createTournament({ name, difficulty = 'easy', isRanked = false }) {
   const res = await pool.query(
-    `INSERT INTO tournaments (name, type, status, max_players, difficulty, created_at)
-     VALUES ($1, 'olympic', 'waiting', 8, $2, $3) RETURNING *`,
-    [name, difficulty, Date.now()]
+    `INSERT INTO tournaments (name, type, status, max_players, difficulty, created_at, is_ranked)
+     VALUES ($1, 'olympic', 'waiting', 8, $2, $3, $4) RETURNING *`,
+    [name, difficulty, Date.now(), isRanked]
   );
   return res.rows[0];
 }
@@ -400,6 +440,29 @@ async function updateRatingForGrade(userId, grade, newRating, newRd, newVol) {
   );
 }
 
+// ── TOURNAMENT RATINGS ──
+async function getTournamentRatingForGrade(userId, grade) {
+  const res = await pool.query('SELECT * FROM tournament_ratings WHERE user_id = $1 AND grade = $2', [userId, grade]);
+  if (res.rows.length > 0) return res.rows[0];
+  
+  const baseRating = 1000;
+  const rd = 350.0;
+  const vol = 0.06;
+  const now = Date.now();
+  await pool.query(
+    'INSERT INTO tournament_ratings (user_id, grade, rating, rd, volatility, matches_played, updated_at) VALUES ($1, $2, $3, $4, $5, 0, $6)',
+    [userId, grade, baseRating, rd, vol, now]
+  );
+  return { user_id: userId, grade, rating: baseRating, rd, volatility: vol, matches_played: 0, updated_at: now };
+}
+
+async function updateTournamentRatingForGrade(userId, grade, newRating, newRd, newVol) {
+  await pool.query(
+    'UPDATE tournament_ratings SET rating = $1, rd = $2, volatility = $3, matches_played = matches_played + 1, updated_at = $4 WHERE user_id = $5 AND grade = $6',
+    [newRating, newRd, newVol, Date.now(), userId, grade]
+  );
+}
+
 async function getLeaderboardByGrade(grade) {
   const res = await pool.query(`
     SELECT u.username, u.wins, u.duelGames, u.soloGames, r.rating, r.matches_played 
@@ -466,13 +529,29 @@ async function getLeaderboard(limit = 10) {
 }
 
 async function recordMatchResult(data) {
-  const { username, score, is_win, mode } = data;
+  const { username, score, is_win, mode, match_uuid } = data;
   const res = await pool.query(`
-    INSERT INTO match_results (username, score, is_win, timestamp, mode)
-    VALUES ($1, $2, $3, $4, $5) RETURNING id
-  `, [username, score, is_win ? 1 : 0, Date.now(), mode]);
-  console.log(`[DB] Match result recorded: ${username} (score: ${score}, win: ${is_win})`);
+    INSERT INTO match_results (username, score, is_win, timestamp, mode, match_uuid)
+    VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+  `, [username, score, is_win ? 1 : 0, Date.now(), mode, match_uuid || null]);
+  console.log(`[DB] Match result recorded: ${username} (score: ${score}, win: ${is_win}, uuid: ${match_uuid})`);
   return res.rows[0].id;
+}
+
+async function recordMatchTurns(matchUuid, turns) {
+  if (!turns || !turns.length) return;
+  const now = Date.now();
+  for (const turn of turns) {
+    await pool.query(`
+      INSERT INTO match_turns (match_uuid, turn_num, question, p1_username, p1_answer, p2_username, p2_answer, correct_answer, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      matchUuid, turn.turn_num, turn.question, 
+      turn.p1_username, turn.p1_answer, 
+      turn.p2_username, turn.p2_answer, 
+      turn.correct_answer, now
+    ]);
+  }
 }
 
 async function getFilteredLeaderboard(filter = 'all', limit = 10) {
@@ -511,6 +590,18 @@ async function getFilteredLeaderboard(filter = 'all', limit = 10) {
 async function getMatchHistory(username, limit = 10) {
    const res = await pool.query('SELECT * FROM match_results WHERE LOWER(username) = LOWER($1) ORDER BY timestamp DESC LIMIT $2', [username, limit]);
    return res.rows;
+}
+
+async function getDetailedMatchHistory(username, limit = 100) {
+  // Получаем заголовки матчей
+  const res = await pool.query(`
+    SELECT mr.*, 
+    (SELECT json_agg(t.*) FROM (SELECT * FROM match_turns ORDER BY turn_num ASC) t WHERE t.match_uuid = mr.match_uuid) as turns
+    FROM match_results mr 
+    WHERE LOWER(username) = LOWER($1) 
+    ORDER BY timestamp DESC LIMIT $2
+  `, [username, limit]);
+  return res.rows;
 }
 
 async function getBestResultsPerMode(username) {
@@ -554,5 +645,9 @@ module.exports = {
   recordMatchResult,
   getFilteredLeaderboard,
   getMatchHistory,
-  getBestResultsPerMode
+  getBestResultsPerMode,
+  getTournamentRatingForGrade,
+  updateTournamentRatingForGrade,
+  recordMatchTurns,
+  getDetailedMatchHistory
 };

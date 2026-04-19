@@ -21,6 +21,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ──── Data Stores ────
 const db = require('./database');
+const crypto = require('crypto');
 const glicko2 = require('glicko2-lite');
 
 function hashPassword(pw) { return Buffer.from(pw + '__sciduel_salt').toString('base64'); }
@@ -284,22 +285,37 @@ async function endGame(roomCode) {
   let p1RatingDelta = 0;
   let p2RatingDelta = 0;
 
-  if (!isSolo && room.isRanked && p1Db && p2Db) {
-    let p1ScoreMath = p1.score > p2.score ? 1 : (p1.score < p2.score ? 0 : 0.5);
-    let p2ScoreMath = 1 - p1ScoreMath;
-    
-    const newP1 = glicko2(p1RatingInfo.rating, p1RatingInfo.rd, p1RatingInfo.volatility, [[p2RatingInfo.rating, p2RatingInfo.rd, p1ScoreMath]]);
-    const newP2 = glicko2(p2RatingInfo.rating, p2RatingInfo.rd, p2RatingInfo.volatility, [[p1RatingInfo.rating, p1RatingInfo.rd, p2ScoreMath]]);
-    
-    p1RatingDelta = newP1.rating - p1RatingInfo.rating;
-    p2RatingDelta = newP2.rating - p2RatingInfo.rating;
+  // ── Tournament vs Duel Rating ──
+  const isTournamentRanked = !!room.tournamentMatchId && room.isRanked;
+  
+  if (!isSolo && p1Db && p2Db) {
+    if (isTournamentRanked) {
+      // Use Tournament Rating
+      p1RatingInfo = await db.getTournamentRatingForGrade(p1Db.id, p1Db.grade);
+      p2RatingInfo = await db.getTournamentRatingForGrade(p2Db.id, p2Db.grade);
+    }
 
-    // Async update to DB rating specific to grade
-    if (p1Db.grade) await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility);
-    if (p2Db.grade) await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility);
-    
-    p1RatingInfo = newP1;
-    p2RatingInfo = newP2;
+    if (room.isRanked) {
+      let p1ScoreMath = p1.score > p2.score ? 1 : (p1.score < p2.score ? 0 : 0.5);
+      let p2ScoreMath = 1 - p1ScoreMath;
+      
+      const newP1 = glicko2(p1RatingInfo.rating, p1RatingInfo.rd, p1RatingInfo.volatility, [[p2RatingInfo.rating, p2RatingInfo.rd, p1ScoreMath]]);
+      const newP2 = glicko2(p2RatingInfo.rating, p2RatingInfo.rd, p2RatingInfo.volatility, [[p1RatingInfo.rating, p1RatingInfo.rd, p2ScoreMath]]);
+      
+      p1RatingDelta = newP1.rating - p1RatingInfo.rating;
+      p2RatingDelta = newP2.rating - p2RatingInfo.rating;
+
+      if (isTournamentRanked) {
+        await db.updateTournamentRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility);
+        await db.updateTournamentRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility);
+      } else {
+        await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility);
+        await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility);
+      }
+      
+      p1RatingInfo = newP1;
+      p2RatingInfo = newP2;
+    }
   }
 
   const payload = {
@@ -321,7 +337,9 @@ async function endGame(roomCode) {
 
     const statsUpdate = {
       totalSolved: (p1Db.totalSolved || 0) + p1.score,
-      totalGames:  (p1Db.totalGames  || 0) + 1
+      totalGames:  (p1Db.totalGames  || 0) + 1,
+      xp:          (p1Db.xp || 0) + (p1.score * 5) + (isWin ? 50 : 10),
+      trophies:    (p1Db.trophies || 0) + (isWin ? 3 : 0)
     };
 
     if (isSolo) {
@@ -339,7 +357,8 @@ async function endGame(roomCode) {
       username: p1.name,
       score: p1.score,
       is_win: isWin,
-      mode: matchMode
+      mode: matchMode,
+      match_uuid: room.matchUuid
     }));
   }
 
@@ -353,14 +372,22 @@ async function endGame(roomCode) {
       duelGames:     (p2Db.duelGames    || 0) + 1,
       wins:          (p2Db.wins         || 0) + (isWin  ? 1 : 0),
       losses:        (p2Db.losses       || 0) + (isLoss ? 1 : 0),
-      bestResult:    Math.max(p2Db.bestResult || 0, p2.score)
+      bestResult:    Math.max(p2Db.bestResult || 0, p2.score),
+      xp:            (p2Db.xp || 0) + (p2.score * 5) + (isWin ? 50 : 10),
+      trophies:      (p2Db.trophies || 0) + (isWin ? 3 : 0)
     }));
     updatePromises.push(db.recordMatchResult({
       username: p2.name,
       score: p2.score,
       is_win: isWin,
-      mode: matchMode
+      mode: matchMode,
+      match_uuid: room.matchUuid
     }));
+  }
+
+  // Save turn history
+  if (room.matchUuid && room.turnsMap) {
+    updatePromises.push(db.recordMatchTurns(room.matchUuid, Object.values(room.turnsMap)));
   }
 
   await Promise.all(updatePromises);
@@ -652,6 +679,16 @@ io.on("connection", (socket) => {
     } catch (e) { callback({ ok: false, msg: 'Ошибка получения истории' }); }
   });
 
+  socket.on('get-detailed-history', async (data, callback) => {
+    try {
+      const username = data && data.username;
+      const limit = (data && data.limit) || 100;
+      if (!username) return callback({ ok: false, msg: 'Имя пользователя не указано' });
+      const matches = await db.getDetailedMatchHistory(username, limit);
+      callback({ ok: true, matches });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения детальной истории' }); }
+  });
+
   // ══════════════════════════════════════════════════
   // ADMIN SYSTEM
   // ══════════════════════════════════════════════════
@@ -755,10 +792,12 @@ io.on("connection", (socket) => {
     const u = users.get(socket.id);
     if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
-      const { name, difficulty } = data;
+      const { name, difficulty, isRanked } = data;
       if (!name) return callback({ ok: false, msg: 'Укажите название турнира' });
-      const t = await db.createTournament({ name, difficulty: difficulty || 'easy' });
+      const t = await db.createTournament({ name, difficulty: difficulty || 'easy', isRanked: !!isRanked });
       callback({ ok: true, tournament: t });
+      // Broadcast to all to refresh tournament lists
+      io.emit('tournaments-updated');
     } catch (e) { callback({ ok: false, msg: 'Ошибка создания турнира' }); }
   });
 
@@ -820,8 +859,11 @@ io.on("connection", (socket) => {
           problems: [],
           timeLeft: 90,
           chat: [],
+          turns: [],
+          matchUuid: crypto.randomUUID(),
           tournamentMatchId: match.id,
           tournamentId: match.tournament_id,
+          isRanked: t.is_ranked,
         });
         await db.updateTournamentMatchRoom(match.id, code);
 
@@ -852,7 +894,7 @@ io.on("connection", (socket) => {
       const { matchId } = data;
       const matchRes = await db.pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId]);
       const match = matchRes.rows[0];
-      if (!match) return callback({ ok: false, msg: 'Match not found' });
+      if (!match) return callback({ ok: false, msg: 'Матч не найден' });
       
       await startPendingMatches(match.tournament_id);
       callback({ ok: true });
@@ -1094,6 +1136,8 @@ io.on("connection", (socket) => {
         timerInterval: null,
         createdAt: Date.now(),
         gameStarted: false,
+        turns: [],
+        matchUuid: crypto.randomUUID(),
       };
 
       rooms.set(code, room);
@@ -1183,6 +1227,23 @@ io.on("connection", (socket) => {
         playerName: player.name,
       });
     }
+
+    // Record turn history grouped by problem index
+    if (!room.turnsMap) room.turnsMap = {};
+    const pIdx = player.problemIndex - 1;
+    if (!room.turnsMap[pIdx]) {
+      room.turnsMap[pIdx] = {
+        turn_num: pIdx + 1,
+        question: currentProblemData.problem.text,
+        p1_username: room.players[0] ? room.players[0].name : 'Unknown',
+        p1_answer: null,
+        p2_username: room.players[1] ? room.players[1].name : (room.isBotGame ? 'Bot' : 'Unknown'),
+        p2_answer: null,
+        correct_answer: currentProblemData.problem.answer
+      };
+    }
+    if (player.slot === 1) room.turnsMap[pIdx].p1_answer = data.answer;
+    else room.turnsMap[pIdx].p2_answer = data.answer;
 
     // Send feedback to the answering player
     socket.emit("answer-feedback", {
