@@ -2712,16 +2712,14 @@
         const lPct = (losses / total) * 100;
         const dPct = ((user.draws || 0) / total) * 100;
 
-        // Circular Chart SVG
-        const pieChart = `
+        // Solid Chart Sectors (conic-gradient)
+        const wStop = Math.round(wPct);
+        const lStop = Math.round(wPct + lPct);
+        const solidChartText = `
           <div class="profile-chart-wrap">
-            <svg viewBox="0 0 36 36" class="circular-chart">
-              <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-              <path class="circle wins" stroke-dasharray="${wPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-              <path class="circle losses" stroke-dashoffset="-${wPct}" stroke-dasharray="${lPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-              <path class="circle draws" stroke-dashoffset="-${wPct + lPct}" stroke-dasharray="${dPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-              <text x="18" y="20.35" class="percentage">${Math.round(wPct)}%</text>
-            </svg>
+            <div class="circular-chart-solid" style="background: conic-gradient(#10b981 0% ${wStop}%, #ef4444 ${wStop}% ${lStop}%, #94a3b8 ${lStop}% 100%)">
+              <div class="percentage-overlay">${Math.round(wPct)}%</div>
+            </div>
             <div class="chart-legend">
               <div class="legend-item"><span class="dot wins"></span> Поб.</div>
               <div class="legend-item"><span class="dot losses"></span> Пор.</div>
@@ -2729,6 +2727,12 @@
             </div>
           </div>
         `;
+
+        // Mock/Simulated Rating Points based on history or randomness (for visual effect)
+        let graphPoints = "0,50 20,45 40,55 60,35 80,40 100,25 120,30 140,15 160,20 180,10 200,12";
+        if (records && records.length > 5) {
+            // If we had real history, we would map it here
+        }
 
         el.innerHTML = `
           <div class="profile-container">
@@ -2749,7 +2753,7 @@
               <div class="profile-grid-v2">
                 <div class="profile-card-v2 stats-card-v2">
                   <h3>📊 Результативность</h3>
-                  ${pieChart}
+                  ${solidChartText}
                   <div class="stats-mini-row">
                     <div class="mini-stat">
                        <b>${wins}</b>
@@ -2786,10 +2790,9 @@
                   <div class="rating-trend-wrap">
                     <div class="trend-label">Динамика последних игр</div>
                     <div class="trend-graph">
-                      <!-- Simple Horizontal Trend Line or SVG graph placeholder -->
                       <svg viewBox="0 0 200 60" class="trend-svg">
-                         <polyline fill="none" stroke="var(--accent)" stroke-width="2" 
-                          points="0,40 20,35 40,45 60,30 80,35 100,20 120,25 140,10 160,15 180,5 200,8" />
+                         <polyline fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                          points="${graphPoints}" />
                       </svg>
                     </div>
                   </div>
