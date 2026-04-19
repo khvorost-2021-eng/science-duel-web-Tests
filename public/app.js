@@ -2728,10 +2728,58 @@
           </div>
         `;
 
-        // Mock/Simulated Rating Points based on history or randomness (for visual effect)
-        let graphPoints = "0,50 20,45 40,55 60,35 80,40 100,25 120,30 140,15 160,20 180,10 200,12";
-        if (records && records.length > 5) {
-            // If we had real history, we would map it here
+        const history = res.ratingHistory || [];
+        const tHistory = res.tournamentHistory || [];
+
+        function generateChartSVG(data, color) {
+            if (!data || data.length === 0) return `<div style="opacity:0.3;padding:20px;text-align:center">Нет данных истории</div>`;
+            const width = 300;
+            const height = 100;
+            const padding = 15;
+            const points = data.length === 1 
+                ? [{x: width/2, y: height/2, val: data[0].rating}] 
+                : data.map((d, i) => ({
+                    x: padding + (i * ((width - padding * 2) / (data.length - 1 || 1))),
+                    y: height - padding - ((d.rating - 1000) * ((height - padding * 2) / 1000)), // Scale 1000-2000
+                    val: Math.round(d.rating),
+                    date: new Date(parseInt(d.timestamp)).toLocaleDateString('ru-RU')
+                }));
+            
+            // Adjust scale if needed
+            const minR = Math.min(...data.map(d => d.rating));
+            const maxR = Math.max(...data.map(d => d.rating));
+            const range = Math.max(200, maxR - minR + 40);
+            const baseline = minR - 20;
+
+            const scaledPoints = data.map((d, i) => ({
+                x: padding + (i * ((width - padding * 2) / (data.length - 1 || 1))),
+                y: height - padding - ((d.rating - baseline) * ((height - padding * 2) / range)),
+                val: Math.round(d.rating),
+                date: new Date(parseInt(d.timestamp)).toLocaleDateString('ru-RU')
+            }));
+
+            let pathData = `M ${scaledPoints[0].x} ${scaledPoints[0].y}`;
+            scaledPoints.forEach((p, i) => { if (i > 0) pathData += ` L ${p.x} ${p.y}`; });
+
+            let areaData = pathData + ` L ${scaledPoints[scaledPoints.length-1].x} ${height} L ${scaledPoints[0].x} ${height} Z`;
+
+            const circles = scaledPoints.map(p => 
+                `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${color}" stroke="white" stroke-width="1.5" 
+                         class="chart-point" data-rating="${p.val}" data-date="${p.date}" />`).join('');
+
+            return `
+                <svg viewBox="0 0 ${width} ${height}" class="area-chart">
+                    <defs>
+                        <linearGradient id="grad-${color.replace('#','')}" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" style="stop-color:${color};stop-opacity:0.4" />
+                            <stop offset="100%" style="stop-color:${color};stop-opacity:0" />
+                        </linearGradient>
+                    </defs>
+                    <path d="${areaData}" fill="url(#grad-${color.replace('#','')})" />
+                    <path d="${pathData}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                    ${circles}
+                </svg>
+            `;
         }
 
         el.innerHTML = `
@@ -2772,6 +2820,7 @@
 
                 <div class="profile-card-v2 rating-card-v2">
                   <h3>📈 Рейтинги (${user.grade || 5} класс)</h3>
+                  
                   <div class="rating-box-v2 main-rating">
                     <div class="rating-info">
                       <span class="rating-label">Дуэльный рейтинг</span>
@@ -2779,24 +2828,41 @@
                     </div>
                     <div class="rating-icon">⚔️</div>
                   </div>
-                  <div class="rating-box-v2 tourney-rating">
+                  <div class="rating-trend-wrap">
+                    <div class="trend-label">График дуэлей (последние 20)</div>
+                    ${generateChartSVG(history, '#6366f1')}
+                  </div>
+
+                  <div class="rating-box-v2 tourney-rating" style="margin-top:20px">
                     <div class="rating-info">
                       <span class="rating-label">Турнирный рейтинг</span>
                       <span class="rating-val">${tRating}</span>
                     </div>
                     <div class="rating-icon">🏅</div>
                   </div>
-                  
                   <div class="rating-trend-wrap">
-                    <div class="trend-label">Динамика последних игр</div>
-                    <div class="trend-graph">
-                      <svg viewBox="0 0 200 60" class="trend-svg">
-                         <polyline fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-                          points="${graphPoints}" />
-                      </svg>
-                    </div>
+                    <div class="trend-label">График турниров</div>
+                    ${generateChartSVG(tHistory, '#f59e0b')}
                   </div>
                 </div>
+              </div>
+              <div id="chart-tooltip" class="chart-tooltip"></div>
+            </div>
+          </div>
+        `;
+
+        // Tooltip logic attachment
+        const tooltip = $('#chart-tooltip');
+        el.querySelectorAll('.chart-point').forEach(p => {
+            p.onmouseenter = (e) => {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `<strong>${p.getAttribute('data-rating')}</strong><br><span style="font-size:0.7rem;opacity:0.7">${p.getAttribute('data-date')}</span>`;
+                const rect = p.getBoundingClientRect();
+                tooltip.style.left = (rect.left + window.scrollX - 40) + 'px';
+                tooltip.style.top = (rect.top + window.scrollY - 55) + 'px';
+            };
+            p.onmouseleave = () => tooltip.style.display = 'none';
+        });
 
                 <div class="profile-card-v2 records-card-v2" style="flex:1">
                   <h3>🏅 Личные рекорды</h3>
@@ -4370,6 +4436,33 @@
 
   // ──── Init ────
   function init() {
+    // ── Global Event Delegation ──
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      
+      // Mobile menu toggle
+      const menuBtn = target.closest('#mobile-menu-btn');
+      if (menuBtn) {
+        e.stopPropagation();
+        const nav = $('.navbar');
+        if (nav) nav.classList.toggle('nav-open');
+        return;
+      }
+      
+      // Global navigation by data-nav attribute
+      const navBtn = target.closest('[data-nav]');
+      if (navBtn) {
+        const screen = navBtn.getAttribute('data-nav');
+        navigateTo(screen);
+        return;
+      }
+      
+      // Close mobile menu when clicking outside or on a link
+      if (target.closest('.navbar-actions') || !target.closest('.navbar')) {
+        $('.navbar').classList.remove('nav-open');
+      }
+    });
+
     state.myName = localStorage.getItem('sciduel_current') || ''; // Sync immediately
     MathKeyboard.init();
     loadCurrentUser();

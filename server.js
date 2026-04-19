@@ -313,6 +313,10 @@ async function endGame(roomCode) {
       await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility, isTournament);
       await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility, isTournament);
       
+      // Log rating history
+      await db.recordRatingChange(p1Db.username, newP1.rating, isTournament ? 'tournament' : 'duel');
+      await db.recordRatingChange(p2Db.username, newP2.rating, isTournament ? 'tournament' : 'duel');
+      
       p1RatingInfo = newP1;
       p2RatingInfo = newP2;
     } else {
@@ -639,6 +643,15 @@ io.on("connection", (socket) => {
         userNoPw.glicko_rating = userRating.rating;
         userNoPw.glicko_rd = userRating.rd;
         userNoPw.glicko_vol = userRating.volatility;
+        
+        // Fetch rating history
+        try {
+          userNoPw.ratingHistory = await db.getRatingHistory(user.username, 'duel', 20);
+          userNoPw.tournamentHistory = await db.getRatingHistory(user.username, 'tournament', 20);
+        } catch(e) {
+          userNoPw.ratingHistory = [];
+          userNoPw.tournamentHistory = [];
+        }
         
         callback({ ok: true, user: userNoPw });
       } else {

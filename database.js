@@ -77,6 +77,18 @@ async function initDB() {
       }
     }
     
+    // ── RATING HISTORY TABLE ───────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS rating_history (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        rating REAL NOT NULL,
+        mode VARCHAR(50) NOT NULL,
+        timestamp BIGINT NOT NULL
+      )
+    `);
+    console.log('[DB] rating_history table initialized');
+
     // ── TOURNAMENT TABLES ──────────────────────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS tournaments (
@@ -626,7 +638,53 @@ async function getBestResultsPerMode(username) {
   return res.rows;
 }
 
+async function recordRatingChange(username, rating, mode) {
+  try {
+    await pool.query(
+      'INSERT INTO rating_history (username, rating, mode, timestamp) VALUES ($1, $2, $3, $4)',
+      [username, rating, mode, Date.now()]
+    );
+  } catch (e) { console.error('[DB] recordRatingChange error:', e.message); }
+}
+
+async function getRatingHistory(username, mode = 'duel', limit = 20) {
+  try {
+    const res = await pool.query(
+      'SELECT * FROM rating_history WHERE username = $1 AND mode = $2 ORDER BY timestamp DESC LIMIT $3',
+      [username, mode, limit]
+    );
+    return res.rows.reverse(); // Chronological order
+  } catch (e) {
+    console.error('[DB] getRatingHistory error:', e.message);
+    return [];
+  }
+}
+
+async function recordRatingChange(username, rating, mode) {
+  try {
+    await pool.query(
+      'INSERT INTO rating_history (username, rating, mode, timestamp) VALUES ($1, $2, $3, $4)',
+      [username, rating, mode, Date.now()]
+    );
+  } catch (e) { console.error('[DB] recordRatingChange error:', e.message); }
+}
+
+async function getRatingHistory(username, mode = 'duel', limit = 20) {
+  try {
+    const res = await pool.query(
+      'SELECT * FROM rating_history WHERE username = $1 AND mode = $2 ORDER BY timestamp DESC LIMIT $3',
+      [username, mode, limit]
+    );
+    return res.rows.reverse(); // Chronological order
+  } catch (e) {
+    console.error('[DB] getRatingHistory error:', e.message);
+    return [];
+  }
+}
+
 module.exports = {
+  recordRatingChange,
+  getRatingHistory,
   pool,
   initDB,
   createTournament,
