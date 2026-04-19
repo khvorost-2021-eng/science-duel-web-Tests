@@ -350,6 +350,8 @@
     window.scrollTo(0, 0);
     updateNavHeightVar();
   }
+  // Expose to global scope for inline onclick handlers
+  window.navigateTo = navigateTo;
 
   function updateNavHeightVar() {
     const nav = $('.navbar');
@@ -431,6 +433,7 @@
   }
 
   function updateNavbar() {
+    window.updateNavbar = updateNavbar;
     const actionsEl = $('.navbar-actions');
     if (!actionsEl) return;
 
@@ -2703,6 +2706,30 @@
         const bestSoloMedium = findBest('solo_medium');
         const bestSoloHard   = findBest('solo_hard');
 
+        // Calculate stats for charts
+        const total = (wins + losses + (user.draws || 0)) || 1;
+        const wPct = (wins / total) * 100;
+        const lPct = (losses / total) * 100;
+        const dPct = ((user.draws || 0) / total) * 100;
+
+        // Circular Chart SVG
+        const pieChart = `
+          <div class="profile-chart-wrap">
+            <svg viewBox="0 0 36 36" class="circular-chart">
+              <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <path class="circle wins" stroke-dasharray="${wPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <path class="circle losses" stroke-dashoffset="-${wPct}" stroke-dasharray="${lPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <path class="circle draws" stroke-dashoffset="-${wPct + lPct}" stroke-dasharray="${dPct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <text x="18" y="20.35" class="percentage">${Math.round(wPct)}%</text>
+            </svg>
+            <div class="chart-legend">
+              <div class="legend-item"><span class="dot wins"></span> Поб.</div>
+              <div class="legend-item"><span class="dot losses"></span> Пор.</div>
+              <div class="legend-item"><span class="dot draws"></span> Нич.</div>
+            </div>
+          </div>
+        `;
+
         el.innerHTML = `
           <div class="profile-container">
             <div class="profile-header-v2">
@@ -2710,7 +2737,6 @@
               <h1 class="profile-username-v2">
                 ${user.username} 
                 ${user.role === 'admin' ? '<span class="admin-badge">🛡️ ADMIN</span>' : ''}
-                <span style="font-size:1.2rem;opacity:0.5">#${user.id}</span>
               </h1>
               <div class="profile-meta-v2">
                   <span>📅 В системе с ${formatedDate}</span>
@@ -2719,23 +2745,11 @@
               </div>
             </div>
 
-            <div class="profile-tabs">
-              <button class="profile-tab-btn active" data-tab="stats">📊 Статистика</button>
-              <button class="profile-tab-btn" data-tab="history">📜 История матчей</button>
-            </div>
-
-            <div id="profile-tab-content-stats" class="profile-tab-pane">
+            <div id="profile-tab-content-stats" class="profile-tab-pane active">
               <div class="profile-grid-v2">
                 <div class="profile-card-v2 stats-card-v2">
-                  <h3>📈 Рейтинги (${user.grade || 5} класс)</h3>
-                  <div class="rating-display-v2">
-                    <span class="rating-val-v2">${rating}</span>
-                    <span class="rating-label-v2">Основные Дуэли</span>
-                  </div>
-                  <div class="rating-display-v2" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:10px; margin-top:10px;">
-                    <span class="rating-val-v2" style="color:var(--accent-orange)">${tRating}</span>
-                    <span class="rating-label-v2">Турнирный Рейтинг</span>
-                  </div>
+                  <h3>📊 Результативность</h3>
+                  ${pieChart}
                   <div class="stats-mini-row">
                     <div class="mini-stat">
                        <b>${wins}</b>
@@ -2746,8 +2760,37 @@
                        <span>Поражений</span>
                     </div>
                     <div class="mini-stat">
-                       <b>${duelGames}</b>
-                       <span>Матчей</span>
+                       <b>${user.draws || 0}</b>
+                       <span>Ничьих</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="profile-card-v2 rating-card-v2">
+                  <h3>📈 Рейтинги (${user.grade || 5} класс)</h3>
+                  <div class="rating-box-v2 main-rating">
+                    <div class="rating-info">
+                      <span class="rating-label">Дуэльный рейтинг</span>
+                      <span class="rating-val">${rating}</span>
+                    </div>
+                    <div class="rating-icon">⚔️</div>
+                  </div>
+                  <div class="rating-box-v2 tourney-rating">
+                    <div class="rating-info">
+                      <span class="rating-label">Турнирный рейтинг</span>
+                      <span class="rating-val">${tRating}</span>
+                    </div>
+                    <div class="rating-icon">🏅</div>
+                  </div>
+                  
+                  <div class="rating-trend-wrap">
+                    <div class="trend-label">Динамика последних игр</div>
+                    <div class="trend-graph">
+                      <!-- Simple Horizontal Trend Line or SVG graph placeholder -->
+                      <svg viewBox="0 0 200 60" class="trend-svg">
+                         <polyline fill="none" stroke="var(--accent)" stroke-width="2" 
+                          points="0,40 20,35 40,45 60,30 80,35 100,20 120,25 140,10 160,15 180,5 200,8" />
+                      </svg>
                     </div>
                   </div>
                 </div>
