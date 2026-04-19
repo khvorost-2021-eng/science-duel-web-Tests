@@ -207,7 +207,8 @@
       localStorage.removeItem('sciduel_current');
       // ── Bug 1.2 fix: show challenge for default grade when logged out ──
       fetchDailyChallenge();
-      $('#daily-challenge-result').style.display = 'none';
+      const resEl = $('#daily-challenge-result');
+      if (resEl) resEl.style.display = 'none';
     }
     updateNavbar();
   }
@@ -223,6 +224,15 @@
       if (res.ok && res.challenge && res.challenge.text) {
         $('#daily-challenge-text').textContent = res.challenge.text;
 
+        if (res.alreadySolved) {
+          $('#daily-challenge-form').style.display = 'none';
+          const resultEl = $('#daily-challenge-result');
+          resultEl.textContent = '✅ Вы уже решили задачу дня! Возвращайтесь завтра.';
+          resultEl.style.color = 'var(--accent-green)';
+          resultEl.style.display = 'block';
+          return;
+        }
+
         if (isLoggedIn) {
           // Logged-in users see the form and can submit
           $('#daily-challenge-form').style.display = 'flex';
@@ -233,19 +243,22 @@
           submitBtn.onclick = () => {
             const answer = $('#daily-challenge-input').value.trim();
             if (!answer) return;
+            submitBtn.disabled = true;
 
             socket.emit('submit-daily-challenge', { answer }, (subRes) => {
               if (subRes.ok) {
                  $('#daily-challenge-result').textContent = '✅ Правильно! Вы заработали +1 в статистику!';
-                 $('#daily-challenge-result').style.color = 'var(--success)';
+                 $('#daily-challenge-result').style.color = 'var(--accent-green)';
                  $('#daily-challenge-result').style.display = 'block';
+                 $('#daily-challenge-form').style.display = 'none';
                  showToast('Верный ответ!', 'success');
                  loadCurrentUser();
               } else {
                  $('#daily-challenge-result').textContent = '❌ ' + (subRes.msg || 'Неверный ответ. Попробуйте ещё раз!');
-                 $('#daily-challenge-result').style.color = 'var(--danger)';
+                 $('#daily-challenge-result').style.color = 'var(--accent-pink)';
                  $('#daily-challenge-result').style.display = 'block';
-                 setTimeout(() => { $('#daily-challenge-result').style.display = 'none'; }, 4000);
+                 submitBtn.disabled = false;
+                 setTimeout(() => { if (!subRes.ok) $('#daily-challenge-result').style.display = 'none'; }, 4000);
               }
             });
           };
@@ -279,6 +292,7 @@
         state.currentUser = result.user;
         state.myName = result.user.username;
         updateNavbar();
+        fetchDailyChallenge(); // Added: fetch challenge for logged in user on refresh
       } else {
         localStorage.removeItem('sciduel_current');
       }
@@ -4223,11 +4237,12 @@
 
   // ──── Init ────
   function init() {
+    state.myName = localStorage.getItem('sciduel_current') || ''; // Sync immediately
     MathKeyboard.init();
     loadCurrentUser();
     // ── Bug 1.2 fix: fetch daily challenge for all visitors (including guests) ──
     // loadCurrentUser calls fetchDailyChallenge on success; this one handles guests:
-    if (!localStorage.getItem('sciduel_current')) {
+    if (!state.myName) {
       fetchDailyChallenge();
     }
     initParticles();
@@ -4254,10 +4269,23 @@
 
     const mobileMenuBtn = $('#mobile-menu-btn');
     if (mobileMenuBtn) {
-      mobileMenuBtn.addEventListener('click', () => {
-        $('.navbar')?.classList.toggle('nav-open');
-      });
+      mobileMenuBtn.onclick = (e) => {
+        e.stopPropagation();
+        const nav = $('.navbar');
+        if (nav) {
+          nav.classList.toggle('nav-open');
+          console.log('[MobileMenu] Toggle:', nav.classList.contains('nav-open'));
+        }
+      };
     }
+    
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', (e) => {
+      const nav = $('.navbar');
+      if (nav && nav.classList.contains('nav-open') && !e.target.closest('.navbar')) {
+        nav.classList.remove('nav-open');
+      }
+    });
 
     $('#hero-duel-btn').addEventListener('click', () => {
       if (!state.currentUser) {
@@ -4610,6 +4638,15 @@
     setTimeout(() => {
       // Bug 1.3 fix: use 'roomCode' key (matching server's data.roomCode parser)
       console.log(`[Tournament] Joining room ${data.roomCode} as ${me}`);
+      
+      // Fix: Set state variables specifically for the tournament match arena
+      state.roomCode = data.roomCode;
+      state.myName = me;
+      state.myPlayerSlot = (data.player1 === me) ? 1 : 2;
+      state.opponentName = (data.player1 === me) ? data.player2 : data.player1;
+      state.isTournament = true;
+      state.tournamentId = tournamentState.current ? tournamentState.current.id : null;
+
       socket.emit('join-room', { roomCode: data.roomCode, playerName: me });
       // join-room doesn't use a callback — navigate on room-update event
       // A one-time listener to catch the room-update for this match

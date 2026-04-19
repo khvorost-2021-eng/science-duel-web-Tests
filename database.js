@@ -137,13 +137,14 @@ async function initDB() {
       )
     `);
     await client.query(`
-      CREATE TABLE IF NOT EXISTS daily_challenges_v2 (
-        grade INTEGER PRIMARY KEY,
-        text TEXT,
-        answer TEXT,
-        updated_at BIGINT
+      CREATE TABLE IF NOT EXISTS daily_challenge_solves (
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        grade INTEGER,
+        solved_at BIGINT,
+        PRIMARY KEY(user_id, grade)
       )
     `);
+    console.log('[DB] Daily challenge solves table ready');
     console.log('[DB] Daily challenges table initialized');
 
   } finally {
@@ -420,8 +421,24 @@ async function setDailyChallenge(grade, text, answer) {
 }
 
 async function getDailyChallenge(grade) {
-  const res = await pool.query('SELECT text, answer FROM daily_challenges_v2 WHERE grade = $1', [grade]);
+  const res = await pool.query('SELECT text, answer, updated_at FROM daily_challenges_v2 WHERE grade = $1', [grade]);
   return res.rows[0];
+}
+
+async function hasUserSolvedChallenge(userId, grade, challengeUpdatedAt) {
+  const res = await pool.query(
+    'SELECT * FROM daily_challenge_solves WHERE user_id = $1 AND grade = $2 AND solved_at >= $3',
+    [userId, grade, challengeUpdatedAt]
+  );
+  return res.rows.length > 0;
+}
+
+async function recordChallengeSolve(userId, grade) {
+  await pool.query(`
+    INSERT INTO daily_challenge_solves (user_id, grade, solved_at)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id, grade) DO UPDATE SET solved_at = EXCLUDED.solved_at
+  `, [userId, grade, Date.now()]);
 }
 
 // Note: createUser is redefined above, I'll export it at the bottom.
@@ -529,6 +546,8 @@ module.exports = {
   getLeaderboardByGrade,
   setDailyChallenge,
   getDailyChallenge,
+  hasUserSolvedChallenge,
+  recordChallengeSolve,
   getUser,
   updateUserStats,
   getLeaderboard,

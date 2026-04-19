@@ -156,14 +156,21 @@ body::before {
 @media (max-width: 768px) {
   .menu-toggle {
     display: block;
-    margin-left: auto;
+    order: 3;
+    margin-left: 12px;
+    z-index: 1001; /* Above actions */
+    position: relative;
+    padding: 8px;
   }
   
   /* Navbar Actions wrap the hamburger menu items AND the persistent right-side tools */
   .navbar-actions {
-    margin-left: 10px;
+    margin-left: auto;
     justify-content: flex-end;
-    gap: 12px;
+    gap: 8px;
+    order: 2;
+    flex: 1;
+    min-width: 0; /* prevent overflow */
   }
 
   .navbar-menu {

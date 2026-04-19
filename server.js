@@ -371,11 +371,19 @@ async function endGame(roomCode) {
   if (room.tournamentMatchId && !isSolo) {
     const winner = p1.score >= p2.score ? p1.name : p2.name;
     try {
+      const matchRes = await db.pool.query('SELECT player1, player2 FROM tournament_matches WHERE id = $1', [room.tournamentMatchId]);
+      const tMatch = matchRes.rows[0];
+      let tScoreP1 = 0, tScoreP2 = 0;
+      if (tMatch) {
+         tScoreP1 = (p1.name === tMatch.player1) ? p1.score : ((p2.name === tMatch.player1) ? p2.score : 0);
+         tScoreP2 = (p1.name === tMatch.player2) ? p1.score : ((p2.name === tMatch.player2) ? p2.score : 0);
+      }
+
       await db.recordTournamentMatchResult({
         matchId:  room.tournamentMatchId,
         winner,
-        score_p1: p1.score,
-        score_p2: p2.score,
+        score_p1: tScoreP1,
+        score_p2: tScoreP2,
         roomCode
       });
       // Notify the tournament room so the bracket updates for everyone
@@ -413,13 +421,15 @@ io.on("connection", (socket) => {
     try {
       const user = await db.getUser(data.username);
       users.set(socket.id, {
+        id: user ? user.id : null,
         username: user ? user.username : "Гость",
         socketId: socket.id,
         role: user ? user.role : 'user',
-        grade: user ? user.grade : null
+        grade: user ? user.grade : null,
+        totalSolved: user ? user.totalSolved : 0
       });
     } catch {
-      users.set(socket.id, { username: "Гость", socketId: socket.id, role: 'user' });
+      users.set(socket.id, { id: null, username: "Гость", socketId: socket.id, role: 'user' });
     }
   });
 
@@ -433,7 +443,14 @@ io.on("connection", (socket) => {
       if (existing) return callback({ ok: false, msg: 'Пользователь уже существует' });
       await db.createUser({ username, password: hashPassword(password), grade });
       const newUser = await db.getUser(username);
-      users.set(socket.id, { username: newUser.username, socketId: socket.id, role: newUser.role, grade: newUser.grade });
+      users.set(socket.id, { 
+        id: newUser.id,
+        username: newUser.username, 
+        socketId: socket.id, 
+        role: newUser.role, 
+        grade: newUser.grade,
+        totalSolved: 0
+      });
       const { password: _, ...userNoPw } = newUser;
       
       // Inject correct rating for UI
@@ -572,15 +589,22 @@ io.on("connection", (socket) => {
       const challenge = await db.getDailyChallenge(grade);
       if (!challenge) return callback({ ok: false, msg: 'No challenge today' });
       
+      const alreadySolved = await db.hasUserSolvedChallenge(u.id, grade, challenge.updated_at);
+      if (alreadySolved) return callback({ ok: false, msg: 'Вы уже решили эту задачу!' });
+
       const isCorrect = answer.trim().toLowerCase() === challenge.answer.trim().toLowerCase();
       if (isCorrect) {
         // Award XP or update user stats if needed
         await db.updateUserStats(u.username, { totalSolved: (u.totalSolved || 0) + 1 });
+        await db.recordChallengeSolve(u.id, grade);
         callback({ ok: true, msg: 'Правильный ответ!' });
       } else {
         callback({ ok: false, msg: 'Неверно, попробуйте еще раз' });
       }
-    } catch (e) { callback({ ok: false, msg: 'Server error' }); }
+    } catch (e) { 
+      console.error('[Server] submit-daily-challenge error:', e);
+      callback({ ok: false, msg: 'Server error' }); 
+    }
   });
 
   socket.on('admin-set-challenge', async (data, callback) => {
