@@ -6,6 +6,9 @@
 (function () {
   'use strict';
 
+  const $ = (s, c = document) => c.querySelector(s);
+  const $$ = (s, c = document) => c.querySelectorAll(s);
+
   console.log('🚀 SciDuel Client Initializing...');
 
   // ──── Socket.io connection ────
@@ -4440,7 +4443,7 @@
     document.addEventListener('click', (e) => {
       const target = e.target;
       
-      // Mobile menu toggle
+      // 1. Mobile menu toggle
       const menuBtn = target.closest('#mobile-menu-btn');
       if (menuBtn) {
         e.stopPropagation();
@@ -4449,15 +4452,7 @@
         return;
       }
       
-      // Global navigation by data-nav attribute
-      const navBtn = target.closest('[data-nav]');
-      if (navBtn) {
-        const screen = navBtn.getAttribute('data-nav');
-        navigateTo(screen);
-        return;
-      }
-
-      // ID-based delegation for dynamic navbar items
+      // 2. Navigation & Actions by ID
       const btnId = target.closest('[id]')?.id;
       if (btnId) {
         switch(btnId) {
@@ -4466,31 +4461,39 @@
           case 'nav-settings-btn': openModal('settings'); break;
           case 'nav-profile-btn': showUserProfile(state.myName); break;
           case 'nav-logout-btn': logout(); break;
-          case 'nav-admin-btn': navigateTo('admin'); break;
-          case 'nav-theory-btn': navigateTo('theory'); break;
+          case 'nav-admin-btn': renderAdminPanelUI(); navigateTo('admin'); break;
+          case 'nav-theory-btn': renderTheory(); navigateTo('theory'); break;
           case 'nav-rules-btn': navigateTo('rules'); break;
           case 'nav-practice-btn': renderPracticeMode(); navigateTo('practice'); break;
           case 'nav-bots-btn': renderBots(); navigateTo('bots'); break;
           case 'nav-tournaments-btn': renderTournaments(); navigateTo('tournaments'); break;
           case 'nav-leaderboard-btn': renderLeaderboard(); navigateTo('leaderboard'); break;
           case 'nav-home-logo': navigateTo('home'); break;
+          case 'hero-duel-btn': 
+            if (!state.currentUser) { showToast('Войдите для игры', 'error'); openModal('login'); } 
+            else { renderDuelSetup(); navigateTo('duel-setup'); }
+            break;
+          case 'hero-search-btn': 
+            if (!state.currentUser) { showToast('Войдите для поиска', 'error'); openModal('login'); }
+            else { renderMatchmaking(); navigateTo('matchmaking'); }
+            break;
+          case 'hero-solo-btn': renderSoloSetup('blitz'); navigateTo('solo-setup'); break;
+          case 'hero-marathon-btn': renderMarathon(); break;
+          case 'hero-practice-btn': renderPracticeMode(); navigateTo('practice'); break;
+          case 'nav-community-btn': window.open('https://t.me/sciduel', '_blank'); break;
         }
       }
-      
-      // Close mobile menu when clicking outside or on a link
+
+      // 3. Close mobile menu when clicking outside or on a link
       if (target.closest('.navbar-actions') || !target.closest('.navbar')) {
         $('.navbar')?.classList.remove('nav-open');
       }
     });
 
-    state.myName = localStorage.getItem('sciduel_current') || ''; // Sync immediately
+    state.myName = localStorage.getItem('sciduel_current') || ''; 
     MathKeyboard.init();
     loadCurrentUser();
-    // ── Bug 1.2 fix: fetch daily challenge for all visitors (including guests) ──
-    // loadCurrentUser calls fetchDailyChallenge on success; this one handles guests:
-    if (!state.myName) {
-      fetchDailyChallenge();
-    }
+    if (!state.myName) fetchDailyChallenge();
     initParticles();
     initQuotes();
     navigateTo('home');
@@ -4500,72 +4503,16 @@
     let lastScrollY = window.scrollY;
     window.addEventListener('scroll', () => {
       const nav = $('.navbar');
-      if (!nav) return;
-      if (document.body.classList.contains('in-game')) return; 
-      
-      // Don't hide navbar if mobile menu is open
+      if (!nav || document.body.classList.contains('in-game')) return; 
       if (nav.classList.contains('nav-open')) return;
-
-      if (window.scrollY > lastScrollY && window.scrollY > 60) {
-        nav.classList.add('nav-hidden');
-      } else {
-        nav.classList.remove('nav-hidden');
-      }
+      if (window.scrollY > lastScrollY && window.scrollY > 60) nav.classList.add('nav-hidden');
+      else nav.classList.remove('nav-hidden');
       lastScrollY = window.scrollY;
     }, { passive: true });
 
     document.body.addEventListener('click', initAudio, { once: true });
 
-    const mobileMenuBtn = $('#mobile-menu-btn');
-    if (mobileMenuBtn) {
-      mobileMenuBtn.onclick = (e) => {
-        e.stopPropagation();
-        const nav = $('.navbar');
-        if (nav) {
-          nav.classList.toggle('nav-open');
-          console.log('[MobileMenu] New Toggle State:', nav.classList.contains('nav-open'));
-        }
-      };
-    }
-    
-    // Close mobile menu when clicking outside
-    document.addEventListener('click', (e) => {
-      const nav = $('.navbar');
-      if (nav && nav.classList.contains('nav-open') && !e.target.closest('.navbar')) {
-        nav.classList.remove('nav-open');
-      }
-    });
-
-    $('#hero-duel-btn').addEventListener('click', () => {
-      if (!state.currentUser) {
-        showToast('Войдите в аккаунт для создания комнаты', 'error');
-        openModal('login');
-        return;
-      }
-      renderDuelSetup();
-      navigateTo('duel-setup');
-    });
-    $('#hero-search-btn').addEventListener('click', () => {
-      if (!state.currentUser) {
-        showToast('Войдите для поиска соперника', 'error');
-        openModal('login');
-        return;
-      }
-      renderMatchmaking();
-      navigateTo('matchmaking');
-    });
-    $('#hero-solo-btn').addEventListener('click', () => {
-      renderSoloSetup('blitz');
-      navigateTo('solo-setup');
-    });
-    $('#hero-marathon-btn')?.addEventListener('click', () => {
-      renderMarathon();
-    });
-    $('#hero-practice-btn')?.addEventListener('click', () => {
-      renderPracticeMode();
-      navigateTo('practice');
-    });
-    
+    // Mode cards delegation or direct assignment (since these are mostly static or in screens)
     $$('.mode-card').forEach(card => {
       card.addEventListener('click', () => {
         const mode = card.dataset.mode;
@@ -4574,12 +4521,12 @@
       });
     });
 
+    // Specialized buttons
     $('#dev-back-btn')?.addEventListener('click', () => navigateTo('home'));
     $('#rules-back-btn')?.addEventListener('click', () => navigateTo('home'));
     $('#bots-back-btn')?.addEventListener('click', () => navigateTo('home'));
-    $('#nav-theory-btn')?.addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
     $('#hero-login-btn')?.addEventListener('click', () => openModal('register'));
-    $('.navbar-logo').addEventListener('click', () => navigateTo('home'));
+    $('.navbar-logo')?.addEventListener('click', () => navigateTo('home'));
 
     $$('.quote-dot').forEach((dot, i) => {
       dot.addEventListener('click', () => {
