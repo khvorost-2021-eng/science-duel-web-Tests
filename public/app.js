@@ -4456,10 +4456,30 @@
         navigateTo(screen);
         return;
       }
+
+      // ID-based delegation for dynamic navbar items
+      const btnId = target.closest('[id]')?.id;
+      if (btnId) {
+        switch(btnId) {
+          case 'nav-login-btn': openModal('login'); break;
+          case 'nav-register-btn': openModal('register'); break;
+          case 'nav-settings-btn': openModal('settings'); break;
+          case 'nav-profile-btn': showUserProfile(state.myName); break;
+          case 'nav-logout-btn': logout(); break;
+          case 'nav-admin-btn': navigateTo('admin'); break;
+          case 'nav-theory-btn': navigateTo('theory'); break;
+          case 'nav-rules-btn': navigateTo('rules'); break;
+          case 'nav-practice-btn': renderPracticeMode(); navigateTo('practice'); break;
+          case 'nav-bots-btn': renderBots(); navigateTo('bots'); break;
+          case 'nav-tournaments-btn': renderTournaments(); navigateTo('tournaments'); break;
+          case 'nav-leaderboard-btn': renderLeaderboard(); navigateTo('leaderboard'); break;
+          case 'nav-home-logo': navigateTo('home'); break;
+        }
+      }
       
       // Close mobile menu when clicking outside or on a link
       if (target.closest('.navbar-actions') || !target.closest('.navbar')) {
-        $('.navbar').classList.remove('nav-open');
+        $('.navbar')?.classList.remove('nav-open');
       }
     });
 
