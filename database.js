@@ -54,7 +54,6 @@ async function initDB() {
     console.log('[DB] match_results table initialized');
 
     // Проверка/добавление новых колонок (миграции)
-    const columns = [
       "role VARCHAR(50) DEFAULT 'user'",
       "grade INTEGER DEFAULT 5",
       'bestSolo INTEGER DEFAULT 0',
@@ -90,9 +89,10 @@ async function initDB() {
         started_at  BIGINT,
         finished_at BIGINT,
         admin_code  VARCHAR(64),
-        is_ranked   BOOLEAN      DEFAULT FALSE
+        is_ranked   BOOLEAN DEFAULT FALSE
       )
     `);
+    try { await client.query('ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_ranked BOOLEAN DEFAULT FALSE'); } catch(e){}
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS tournament_players (
@@ -148,44 +148,39 @@ async function initDB() {
       )
     `);
     console.log('[DB] Daily challenge solves table ready');
+    console.log('[DB] Daily challenges table initialized');
     
-    // Новая колонка match_uuid для группировки результатов
-    try {
-      await client.query(`ALTER TABLE match_results ADD COLUMN IF NOT EXISTS match_uuid VARCHAR(64)`);
-    } catch (e) { console.warn('[DB] match_uuid migration:', e.message); }
-
-    // Таблица пораундной истории
+    // Новая таблица подробной истории (теперь храним в UUID для связи с результатами)
     await client.query(`
       CREATE TABLE IF NOT EXISTS match_turns (
         id             SERIAL PRIMARY KEY,
         match_uuid     VARCHAR(64) NOT NULL,
         turn_num       INTEGER NOT NULL,
-        question       TEXT NOT NULL,
+        question_text  TEXT,
         p1_username    VARCHAR(255),
         p1_answer      TEXT,
         p2_username    VARCHAR(255),
         p2_answer      TEXT,
-        correct_answer TEXT NOT NULL,
-        created_at     BIGINT
+        correct_answer TEXT,
+        timestamp      BIGINT
       )
     `);
-    
-    // Таблица рейтингов для турниров (отдельная от дуэлей)
+    try { await client.query('ALTER TABLE match_results ADD COLUMN IF NOT EXISTS match_uuid VARCHAR(64)'); } catch(e){}
+
+    // Таблица для турнирного рейтинга (отдельно от дуэльного)
     await client.query(`
       CREATE TABLE IF NOT EXISTS tournament_ratings (
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        grade INTEGER,
-        rating REAL NOT NULL,
-        rd REAL NOT NULL,
-        volatility REAL NOT NULL,
+        user_id        INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        grade          INTEGER,
+        rating         REAL NOT NULL DEFAULT 1500,
+        rd             REAL NOT NULL DEFAULT 350,
+        volatility     REAL NOT NULL DEFAULT 0.06,
         matches_played INTEGER DEFAULT 0,
-        updated_at BIGINT,
+        updated_at     BIGINT,
         PRIMARY KEY(user_id, grade)
       )
     `);
-
-    console.log('[DB] History and Tournament rating tables ready');
-    console.log('[DB] Daily challenges table initialized');
+    console.log('[DB] Detailed history and tournament rating tables ready');
 
   } finally {
     client.release();
@@ -433,34 +428,28 @@ async function getRatingForGrade(userId, grade) {
   return { user_id: userId, grade, rating: baseRating, rd, volatility: vol, matches_played: 0, updated_at: now };
 }
 
-async function updateRatingForGrade(userId, grade, newRating, newRd, newVol) {
+async function updateRatingForGrade(userId, grade, newRating, newRd, newVol, isTournament = false) {
+  const table = isTournament ? 'tournament_ratings' : 'ratings';
+  // Use upsert-like logic or assume row exists (it should be initialized during createUser or getRating)
   await pool.query(
-    'UPDATE ratings SET rating = $1, rd = $2, volatility = $3, matches_played = matches_played + 1, updated_at = $4 WHERE user_id = $5 AND grade = $6',
+    `UPDATE ${table} SET rating = $1, rd = $2, volatility = $3, matches_played = matches_played + 1, updated_at = $4 WHERE user_id = $5 AND grade = $6`,
     [newRating, newRd, newVol, Date.now(), userId, grade]
   );
 }
 
-// ── TOURNAMENT RATINGS ──
 async function getTournamentRatingForGrade(userId, grade) {
   const res = await pool.query('SELECT * FROM tournament_ratings WHERE user_id = $1 AND grade = $2', [userId, grade]);
   if (res.rows.length > 0) return res.rows[0];
   
-  const baseRating = 1000;
+  const baseRating = 1000 + ((grade - 5) * 200);
   const rd = 350.0;
   const vol = 0.06;
   const now = Date.now();
   await pool.query(
-    'INSERT INTO tournament_ratings (user_id, grade, rating, rd, volatility, matches_played, updated_at) VALUES ($1, $2, $3, $4, $5, 0, $6)',
+    'INSERT INTO tournament_ratings (user_id, grade, rating, rd, volatility, matches_played, updated_at) VALUES ($1, $2, $3, $4, $5, 0, $6) ON CONFLICT DO NOTHING',
     [userId, grade, baseRating, rd, vol, now]
   );
   return { user_id: userId, grade, rating: baseRating, rd, volatility: vol, matches_played: 0, updated_at: now };
-}
-
-async function updateTournamentRatingForGrade(userId, grade, newRating, newRd, newVol) {
-  await pool.query(
-    'UPDATE tournament_ratings SET rating = $1, rd = $2, volatility = $3, matches_played = matches_played + 1, updated_at = $4 WHERE user_id = $5 AND grade = $6',
-    [newRating, newRd, newVol, Date.now(), userId, grade]
-  );
 }
 
 async function getLeaderboardByGrade(grade) {
@@ -540,18 +529,38 @@ async function recordMatchResult(data) {
 
 async function recordMatchTurns(matchUuid, turns) {
   if (!turns || !turns.length) return;
-  const now = Date.now();
-  for (const turn of turns) {
-    await pool.query(`
-      INSERT INTO match_turns (match_uuid, turn_num, question, p1_username, p1_answer, p2_username, p2_answer, correct_answer, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [
-      matchUuid, turn.turn_num, turn.question, 
-      turn.p1_username, turn.p1_answer, 
-      turn.p2_username, turn.p2_answer, 
-      turn.correct_answer, now
-    ]);
+  const client = await pool.connect();
+  try {
+    for (const t of turns) {
+      await client.query(`
+        INSERT INTO match_turns (match_uuid, turn_num, question_text, p1_username, p1_answer, p2_username, p2_answer, correct_answer, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [matchUuid, t.num, t.question, t.p1User, t.p1Ans, t.p2User, t.p2Ans, t.correctAns, t.ts || Date.now()]);
+    }
+  } finally { client.release(); }
+}
+
+async function getDetailedHistory(username, limit = 100) {
+  // Get summaries
+  const matchRes = await pool.query(`
+    SELECT * FROM match_results 
+    WHERE LOWER(username) = LOWER($1) 
+    ORDER BY timestamp DESC LIMIT $2
+  `, [username, limit]);
+  
+  const matches = matchRes.rows;
+  // For each match with a UUID, fetch turns
+  for (const m of matches) {
+    if (m.match_uuid) {
+      const turnRes = await pool.query(`
+        SELECT * FROM match_turns WHERE match_uuid = $1 ORDER BY turn_num ASC
+      `, [m.match_uuid]);
+      m.turns = turnRes.rows;
+    } else {
+      m.turns = [];
+    }
   }
+  return matches;
 }
 
 async function getFilteredLeaderboard(filter = 'all', limit = 10) {
@@ -590,18 +599,6 @@ async function getFilteredLeaderboard(filter = 'all', limit = 10) {
 async function getMatchHistory(username, limit = 10) {
    const res = await pool.query('SELECT * FROM match_results WHERE LOWER(username) = LOWER($1) ORDER BY timestamp DESC LIMIT $2', [username, limit]);
    return res.rows;
-}
-
-async function getDetailedMatchHistory(username, limit = 100) {
-  // Получаем заголовки матчей
-  const res = await pool.query(`
-    SELECT mr.*, 
-    (SELECT json_agg(t.*) FROM (SELECT * FROM match_turns ORDER BY turn_num ASC) t WHERE t.match_uuid = mr.match_uuid) as turns
-    FROM match_results mr 
-    WHERE LOWER(username) = LOWER($1) 
-    ORDER BY timestamp DESC LIMIT $2
-  `, [username, limit]);
-  return res.rows;
 }
 
 async function getBestResultsPerMode(username) {
@@ -643,11 +640,9 @@ module.exports = {
   updateUserStats,
   getLeaderboard,
   recordMatchResult,
-  getFilteredLeaderboard,
   getMatchHistory,
   getBestResultsPerMode,
-  getTournamentRatingForGrade,
-  updateTournamentRatingForGrade,
   recordMatchTurns,
-  getDetailedMatchHistory
+  getDetailedHistory,
+  getTournamentRatingForGrade
 };

@@ -218,54 +218,68 @@
     const grade = (state.currentUser && state.currentUser.grade) ? state.currentUser.grade : 5;
     const isLoggedIn = !!state.currentUser;
 
-    socket.emit('get-daily-challenge', { grade }, (res) => {
-      const resEl = $('#daily-challenge-result');
-      const formEl = $('#daily-challenge-form');
-      const textEl = $('#daily-challenge-text');
+    console.log(`[DailyChallenge] Fetching for grade=${grade}, loggedIn=${isLoggedIn}`);
 
+    socket.emit('get-daily-challenge', { grade }, (res) => {
       if (res.ok && res.challenge && res.challenge.text) {
-        textEl.textContent = res.challenge.text;
+        $('#daily-challenge-text').textContent = res.challenge.text;
 
         if (res.alreadySolved) {
-          formEl.style.display = 'none';
-          resEl.textContent = '✅ Вы уже решили задачу дня! Новые задачи появляются ежедневно.';
-          resEl.style.color = '#10b981';
-          resEl.style.display = 'block';
-        } else if (isLoggedIn) {
-          formEl.style.display = 'flex';
-          resEl.style.display = 'none';
+          $('#daily-challenge-form').style.display = 'none';
+          const resultEl = $('#daily-challenge-result');
+          resultEl.textContent = '✅ Вы уже решили задачу дня! Возвращайтесь завтра.';
+          resultEl.style.color = 'var(--accent-green)';
+          resultEl.style.display = 'block';
+          return;
+        }
+
+        if (isLoggedIn) {
+          // Logged-in users see the form and can submit
+          $('#daily-challenge-form').style.display = 'flex';
           const submitBtn = $('#daily-challenge-submit');
           submitBtn.disabled = false;
+          submitBtn.title = '';
+
           submitBtn.onclick = () => {
             const answer = $('#daily-challenge-input').value.trim();
             if (!answer) return;
             submitBtn.disabled = true;
+
             socket.emit('submit-daily-challenge', { answer }, (subRes) => {
               if (subRes.ok) {
-                 resEl.textContent = '✅ Правильно! Опыт и трофеи начислены.';
-                 resEl.style.color = '#10b981';
-                 resEl.style.display = 'block';
-                 formEl.style.display = 'none';
-                 showToast('Верно!', 'success');
+                 $('#daily-challenge-result').textContent = '✅ Правильно! Вы заработали +1 в статистику!';
+                 $('#daily-challenge-result').style.color = 'var(--accent-green)';
+                 $('#daily-challenge-result').style.display = 'block';
+                 $('#daily-challenge-form').style.display = 'none';
+                 showToast('Верный ответ!', 'success');
                  loadCurrentUser();
               } else {
-                 resEl.textContent = '❌ ' + (subRes.msg || 'Неверно. Попробуйте ещё раз!');
-                 resEl.style.color = '#ef4444';
-                 resEl.style.display = 'block';
+                 $('#daily-challenge-result').textContent = '❌ ' + (subRes.msg || 'Неверный ответ. Попробуйте ещё раз!');
+                 $('#daily-challenge-result').style.color = 'var(--accent-pink)';
+                 $('#daily-challenge-result').style.display = 'block';
                  submitBtn.disabled = false;
-               }
+                 setTimeout(() => { if (!subRes.ok) $('#daily-challenge-result').style.display = 'none'; }, 4000);
+              }
             });
           };
         } else {
-          formEl.style.display = 'none';
-          resEl.textContent = '💡 Войдите в аккаунт, чтобы ответить и получить награду';
-          resEl.style.color = 'var(--text-muted)';
-          resEl.style.display = 'block';
+          // Guest users can see the task but can't submit — button redirects to login
+          $('#daily-challenge-form').style.display = 'flex';
+          const submitBtn = $('#daily-challenge-submit');
+          submitBtn.disabled = false;
+          submitBtn.title = 'Войдите, чтобы отправить ответ';
+          submitBtn.onclick = () => {
+            showToast('Войдите, чтобы ответить на задачу!', 'info');
+            openModal('login');
+          };
         }
       } else {
-        textEl.textContent = 'Сегодня задачи пока нет. Возвращайтесь завтра!';
-        formEl.style.display = 'none';
-        resEl.style.display = 'none';
+        if (isLoggedIn) {
+          $('#daily-challenge-text').textContent = `К сожалению, для ${grade} класса пока нет новой задачи.`;
+        } else {
+          $('#daily-challenge-text').textContent = 'Задача дня скоро появится. Следите за обновлениями!';
+        }
+        $('#daily-challenge-form').style.display = 'none';
       }
     });
   }
@@ -2654,15 +2668,13 @@
   }
 
   // ──── Profile ────
-  function renderProfile(targetUsername = null) {
-    const viewingMyOwn = !targetUsername || (state.currentUser && targetUsername === state.currentUser.username);
-    const username = targetUsername || (state.currentUser ? state.currentUser.username : null);
-    
-    if (!username) { navigateTo('home'); return; }
+  function renderProfile() {
+    if (!state.currentUser) { navigateTo('home'); return; }
 
-    socket.emit('get-user-stats', { username }, (userRes) => {
-      if (!userRes.ok) { showToast('Пользователь не найден', 'error'); navigateTo('home'); return; }
-      const u = userRes.user;
+    socket.emit('get-user', { username: state.currentUser.username }, (result) => {
+      if (!result || !result.ok) { navigateTo('home'); return; }
+      const user = result.user;
+      state.currentUser = user;
 
       socket.emit('get-best-results', { username: user.username }, (resBest) => {
         const records = (resBest && resBest.ok) ? resBest.records : [];
@@ -2670,181 +2682,126 @@
         if (!el) return;
 
         const initial = user.username.charAt(0).toUpperCase();
-        // Winrate = wins / duelGames only (solo has no winner)
         const duelGames = user.duelgames || user.duelGames || 0;
-        const soloGames = user.sologames || user.soloGames || 0;
-        const totalGames = user.totalgames || user.totalGames || 0;
         const wins = user.wins || 0;
         const losses = user.losses || 0;
-        const winRate = duelGames > 0 ? Math.round((wins / duelGames) * 100) : 0;
         const rating = Math.round(user.glicko_rating || 1500);
-        const userRank = getRank(rating);
+        const tRating = Math.round(user.tournament_rating || 1500);
 
-        // Helper: best score for a mode in match_results
+        const formatedDate = user.created_at ? new Date(user.created_at).toLocaleDateString('ru-RU') : 'недавно';
+
         const findBest = (mode) => {
           const r = records.find(rec => rec.mode === mode);
           return r ? r.best_score : 0;
         };
 
-        // Best duel score = user.bestResult updated by server
         const bestDuel = user.bestresult || user.bestResult || 0;
-
-        // Best solo by difficulty (stored as 'solo_easy', 'solo_medium', 'solo_hard')
         const bestSoloEasy   = findBest('solo_easy');
         const bestSoloMedium = findBest('solo_medium');
         const bestSoloHard   = findBest('solo_hard');
 
         el.innerHTML = `
           <div class="profile-container">
-            <div class="profile-header-v2" style="display:flex;align-items:center;gap:24px;margin-bottom:32px">
-              <div class="profile-avatar-v2" style="width:80px;height:80px;background:var(--gradient-main);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:3rem;box-shadow:0 8px 16px rgba(0,0,0,0.3)">⚛️</div>
-              <div class="profile-info-v2">
-                <h1 class="profile-name-v2" style="font-size:2rem;margin:0 0 8px 0">${u.username}</h1>
-                <div class="profile-badges-v2" style="display:flex;gap:10px;flex-wrap:wrap">
-                  <span class="badge ${u.role === 'admin' ? 'badge-admin' : 'badge-user'}">${u.role.toUpperCase()}</span>
-                  <span class="badge" style="background:rgba(96,165,250,0.1);color:#60a5fa">⚡ ${u.xp || 0} XP</span>
-                  <span class="badge" style="background:rgba(251,191,36,0.1);color:#fbbf24">🏆 ${u.trophies || 0}</span>
-                </div>
+            <div class="profile-header-v2">
+              <div class="profile-badge-v2">🔬 Профиль исследователя</div>
+              <h1 class="profile-username-v2">${user.username} <span style="font-size:1.2rem;opacity:0.5">#${user.id}</span></h1>
+              <div class="profile-meta-v2">
+                  <span>📅 В системе с ${formatedDate}</span>
+                  <span>🏆 Трофеи: ${user.trophies || 0}</span>
+                  <span>⚡ Опыт: ${user.xp || 0}</span>
               </div>
             </div>
 
             <div class="profile-tabs">
               <button class="profile-tab-btn active" data-tab="stats">📊 Статистика</button>
-              <button class="profile-tab-btn" data-tab="history">📜 История</button>
+              <button class="profile-tab-btn" data-tab="history">📜 История матчей</button>
             </div>
 
-            <div id="profile-tab-content-stats" class="profile-tab-content">
-              <div class="stats-grid">
-              <div class="stat-card stat-card-rating">
-                <div class="stat-value" style="color: var(--accent-blue)">${rating}</div>
-                <div class="stat-label">🏆 Рейтинг</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">${wins}</div>
-                <div class="stat-label">Победы</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">${losses}</div>
-                <div class="stat-label">Поражения</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">${duelGames}</div>
-                <div class="stat-label">Дуэлей сыграно</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">${winRate}%</div>
-                <div class="stat-label">Винрейт (дуэли)</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">${user.totalSolved || 0}</div>
-                <div class="stat-label">Решено задач</div>
-              </div>
-            </div>
+            <div id="profile-tab-content-stats" class="profile-tab-pane">
+              <div class="profile-grid-v2">
+                <div class="profile-card-v2 stats-card-v2">
+                  <h3>📈 Рейтинги (${user.grade || 5} класс)</h3>
+                  <div class="rating-display-v2">
+                    <span class="rating-val-v2">${rating}</span>
+                    <span class="rating-label-v2">Основные Дуэли</span>
+                  </div>
+                  <div class="rating-display-v2" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:10px; margin-top:10px;">
+                    <span class="rating-val-v2" style="color:var(--accent-orange)">${tRating}</span>
+                    <span class="rating-label-v2">Турнирный Рейтинг</span>
+                  </div>
+                  <div class="stats-mini-row" style="margin-top:20px">
+                    <div class="mini-stat"><b>${wins}</b><span>Поб</span></div>
+                    <div class="mini-stat"><b>${losses}</b><span>Пор</span></div>
+                    <div class="mini-stat"><b>${duelGames}</b><span>Дуэлей</span></div>
+                  </div>
+                </div>
 
-            <div class="best-results-section">
-              <h2 style="margin-bottom:16px; font-size:1.4rem">🌟 Личные рекорды</h2>
-              <div class="records-grid-v2">
-                <div class="record-item-v2">
-                  <span class="rec-label">⚔️ Лучшая дуэль</span>
-                  <span class="rec-val rec-val-big">${bestDuel}</span>
-                </div>
-                <div class="record-item-v2">
-                  <span class="rec-label">⚡ Штурм — Лёгкий</span>
-                  <span class="rec-val rec-val-big">${bestSoloEasy}</span>
-                </div>
-                <div class="record-item-v2">
-                  <span class="rec-label">⚡ Штурм — Средний</span>
-                  <span class="rec-val rec-val-big">${bestSoloMedium}</span>
-                </div>
-                <div class="record-item-v2">
-                  <span class="rec-label">⚡ Штурм — Сложный</span>
-                  <span class="rec-val rec-val-big">${bestSoloHard}</span>
+                <div class="profile-card-v2 records-card-v2" style="flex:1">
+                  <h3>🏅 Личные рекорды</h3>
+                  <div class="records-grid-v2">
+                    <div class="record-item-v2">
+                      <span class="rec-label">⚔️ Лучшая дуэль</span>
+                      <span class="rec-val rec-val-big">${bestDuel}</span>
+                    </div>
+                    <div class="record-item-v2">
+                      <span class="rec-label">⚡ Штурм (Лёг.)</span>
+                      <span class="rec-val rec-val-big">${bestSoloEasy}</span>
+                    </div>
+                    <div class="record-item-v2">
+                      <span class="rec-label">⚡ Штурм (Ср.)</span>
+                      <span class="rec-val rec-val-big">${bestSoloMedium}</span>
+                    </div>
+                    <div class="record-item-v2">
+                      <span class="rec-label">⚡ Штурм (Сл.)</span>
+                      <span class="rec-val rec-val-big">${bestSoloHard}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div class="match-history-section" id="match-history-section">
-              <h2 style="margin-bottom:16px; font-size:1.4rem">📜 История матчей</h2>
-              <div id="match-history-list" class="match-history-list">
-                <div style="text-align:center;padding:24px;color:var(--text-muted)">Загрузка...</div>
+              
+              <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px">
+                <button class="btn btn-primary btn-lg" id="profile-duel-btn">⚔️ Создать дуэль</button>
+                <button class="btn btn-secondary btn-lg" id="profile-back-btn">← На главную</button>
               </div>
             </div>
 
-            <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-              <button class="btn btn-primary btn-lg" id="profile-duel-btn">🏠 Создать комнату</button>
-              <button class="btn btn-secondary btn-lg" id="profile-search-btn">🔍 Найти соперника</button>
-              <button class="btn btn-accent btn-lg" id="profile-solo-btn">⚡ Штурм</button>
-              <button class="btn btn-ghost btn-lg" id="profile-back-btn">← На главную</button>
+            <div id="profile-tab-content-history" class="profile-tab-pane" style="display:none">
+              <div class="match-history-section">
+                <h2 style="margin-bottom:20px; font-size:1.4rem">📜 Детальная история матчей</h2>
+                <div id="match-history-list" class="match-history-list">
+                  <div style="text-align:center;padding:24px;color:var(--text-muted)">Загрузка...</div>
+                </div>
+              </div>
+              <div style="text-align:center; margin-top:32px">
+                <button class="btn btn-ghost" id="profile-back-btn-hist">← На главную</button>
+              </div>
             </div>
           </div>
         `;
 
-        // Profile Tab Logic
-        $$('.profile-tab-btn').forEach(btn => {
-          btn.onclick = () => {
-            $$('.profile-tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const target = btn.dataset.tab;
-            $('#profile-tab-content-stats').style.display = target === 'stats' ? 'block' : 'none';
-            $('#profile-tab-content-history').style.display = target === 'history' ? 'block' : 'none';
-            if (target === 'history') loadDetailedHistory(u.username);
-          };
+        // Tab Switching Logic
+        const tabs = el.querySelectorAll('.profile-tab-btn');
+        tabs.forEach(tab => {
+            tab.onclick = () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                const target = tab.dataset.tab;
+                el.querySelector('#profile-tab-content-stats').style.display = target === 'stats' ? 'block' : 'none';
+                el.querySelector('#profile-tab-content-history').style.display = target === 'history' ? 'block' : 'none';
+                if (target === 'history') loadMatchHistory(user.username);
+            };
         });
 
-        if (viewingMyOwn) {
-          $('#profile-duel-btn').onclick = () => { renderDuelSetup(); navigateTo('duel-setup'); };
-          $('#profile-search-btn').onclick = () => { renderMatchmaking(); navigateTo('matchmaking'); };
-          $('#profile-solo-btn').onclick = () => { renderSoloSetup('blitz'); navigateTo('solo-setup'); };
-        }
-        $('#profile-back-btn').onclick = () => navigateTo('home');
+        $('#profile-duel-btn')?.addEventListener('click', () => { renderDuelSetup(); navigateTo('duel-setup'); });
+        $('#profile-back-btn')?.addEventListener('click', () => navigateTo('home'));
+        $('#profile-back-btn-hist')?.addEventListener('click', () => navigateTo('home'));
       });
-    });
-  }
-
-  function loadDetailedHistory(username) {
-    socket.emit('get-detailed-history', { username, limit: 100 }, (res) => {
-      const el = $('#match-history-list');
-      if (!el) return;
-      if (!res.ok || !res.matches || !res.matches.length) {
-        el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted)">История пуста</div>';
-        return;
-      }
-
-      el.innerHTML = res.matches.map(m => {
-        const dateStr = new Date(Number(m.timestamp)).toLocaleString('ru-RU', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-        const turnsHtml = m.turns ? m.turns.map(t => `
-          <div class="history-turn-item">
-            <div class="history-turn-q">${t.question}</div>
-            <div class="history-turn-ans-row">
-              <span class="ans-p1"><b>${t.p1_username}:</b> ${t.p1_answer || '—'}</span>
-              <span class="ans-p2"><b>${t.p2_username}:</b> ${t.p2_answer || '—'}</span>
-              <span class="ans-correct"><b>Верно:</b> ${t.correct_answer}</span>
-            </div>
-          </div>
-        `).join('') : '<div style="color:var(--text-muted);font-size:0.8rem">Детали отсутствуют</div>';
-
-        return `
-          <div class="match-history-item ${m.is_win ? 'win' : 'loss'}" onclick="const d = this.querySelector('.history-details'); d.style.display = d.style.display==='block'?'none':'block';">
-            <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
-              <div style="display:flex;flex-direction:column;gap:4px">
-                <span style="font-weight:700;font-size:1rem">${m.mode.toUpperCase()}</span>
-                <span style="font-size:0.8rem;color:var(--text-muted)">${dateStr}</span>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:1.4rem;font-weight:800">${m.score}</div>
-                <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:${m.is_win ? '#10b981':'#ef4444'}">${m.is_win ? 'Победа':'Поражение'}</div>
-              </div>
-            </div>
-            <div class="history-details" style="display:none;margin-top:16px">${turnsHtml}</div>
-          </div>
-        `;
-      }).join('');
     });
   }
 
 
   function loadMatchHistory(username) {
-    socket.emit('get-match-history', { username, limit: 10 }, (result) => {
+    socket.emit('get-detailed-history', { username }, (result) => {
       const listEl = $('#match-history-list');
       if (!listEl) return;
 
@@ -2853,23 +2810,58 @@
         return;
       }
 
-      listEl.innerHTML = result.matches.map(m => {
+      listEl.innerHTML = result.matches.map((m, idx) => {
         const ts = Number(m.timestamp);
         const date = isNaN(ts) ? new Date(m.timestamp) : new Date(ts);
-        const timeStr = isNaN(date.getTime())
-          ? 'Дата неизвестна'
-          : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const timeStr = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        
         const isSoloMode = String(m.mode).startsWith('solo_');
         const modeLabel = isSoloMode ? ('⚡ Штурм (' + m.mode.replace('solo_','') + ')') : ('⚔️ Дуэль (' + m.mode + ')');
         const resultClass = m.is_win ? 'match-win' : (isSoloMode ? 'match-solo' : 'match-loss');
-        const resultText = isSoloMode ? 'Штурм' : (m.is_win ? 'Победа' : 'Поражение');
+        const resultText = isSoloMode ? 'Завершено' : (m.is_win ? 'Победа' : 'Поражение');
+
+        const turnsHtml = (m.turns && m.turns.length > 0) ? `
+            <div class="history-detail" id="hist-detail-${idx}">
+                <div class="history-turn history-turn-header" style="display:grid; grid-template-columns: 30px 1fr 100px 80px; gap:10px; padding:8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.8rem; color:var(--text-muted)">
+                    <span>#</span>
+                    <span>Вопрос</span>
+                    <span>Ответы</span>
+                    <span>Верно</span>
+                </div>
+                ${m.turns.map(t => {
+                    const myAns = (t.p1_username === username) ? t.p1_answer : t.p2_answer;
+                    const oppAns = (t.p1_username === username) ? t.p2_answer : t.p1_answer;
+                    const isCorrect = String(myAns) === String(t.correct_answer);
+                    const oppCorrect = String(oppAns) === String(t.correct_answer);
+                    
+                    return `
+                        <div class="history-turn" style="display:grid; grid-template-columns: 30px 1fr 100px 80px; gap:10px; padding:8px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.9rem">
+                            <span>${t.turn_num + 1}</span>
+                            <span style="font-family:monospace; color:var(--text-primary)">${t.question_text}</span>
+                            <span style="display:flex; flex-direction:column; gap:2px">
+                                <span class="${isCorrect ? 'text-success' : 'text-danger'}" style="font-weight:600">${myAns || '-'}</span>
+                                <span style="opacity:0.4; font-size:0.75rem">${oppAns ? 'vs ' + oppAns : 'нет ответа'}</span>
+                            </span>
+                            <span style="color:var(--accent-cyan); font-weight:600">${t.correct_answer}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        ` : `<div class="history-detail" id="hist-detail-${idx}"><p style="text-align:center;padding:12px;font-size:0.8rem;opacity:0.5">Детализация недоступна</p></div>`;
 
         return `
-          <div class="match-history-item ${resultClass}">
-            <div class="match-mode">${modeLabel}</div>
-            <div class="match-score-display">${m.score}</div>
-            <div class="match-result-text">${resultText}</div>
-            <div class="match-time">${timeStr}</div>
+          <div class="match-history-item ${resultClass}" onclick="this.classList.toggle('expanded')" style="cursor:pointer; display:flex; flex-direction:column; margin-bottom:12px; border-radius:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); overflow:hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px">
+                <div style="display:flex; flex-direction:column">
+                    <span style="font-weight:600; font-size:1rem">${modeLabel}</span>
+                    <span style="font-size:0.75rem; opacity:0.5">${timeStr}</span>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-size:1.1rem; font-weight:800; color:var(--accent-blue)">${m.score}</div>
+                    <div style="font-size:0.8rem; font-weight:600; opacity:0.8">${resultText}</div>
+                </div>
+            </div>
+            ${turnsHtml}
           </div>
         `;
       }).join('');
@@ -2960,10 +2952,35 @@
   }
 
   function showUserProfile(username) {
-    if (!username) return;
-    navigateTo('profile');
-    renderProfile(username);
-  }
+    socket.emit('get-user', { username }, (result) => {
+      if (!result || !result.ok) { showToast('Игрок не найден', 'error'); return; }
+      const user = result.user;
+      const rank = getRank(user.glicko_rating || 1500);
+      const initial = user.username.charAt(0).toUpperCase();
+      const winRate = user.totalGames > 0 ? Math.round((user.wins / user.totalGames) * 100) : 0;
+
+      // Reuse the existing modal overlay
+      const overlay = $('#modal-overlay');
+      const modalEl = $('#modal');
+      if (!overlay || !modalEl) return;
+
+      modalEl.innerHTML = `
+        <div style="text-align:center; padding: 8px 0 0;">
+          <button class="modal-close" id="modal-close-btn" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer">✕</button>
+          <div class="profile-avatar ${rank.class}" style="width:72px;height:72px;font-size:1.8rem;margin:0 auto 12px;">${initial}</div>
+          <h2 style="margin-bottom:4px">${user.username} ${rank.icon}</h2>
+          <p style="color:var(--accent-purple);font-weight:600;margin-bottom:20px">${rank.title} ${user.grade ? ' • ' + user.grade + ' класс' : ''}</p>
+          <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);gap:12px;">
+            <div class="stat-card"><div class="stat-value">${Math.round(user.glicko_rating || 1500)}</div><div class="stat-label">Рейтинг ${user.grade ? '(' + user.grade + ' кл.)' : ''}</div></div>
+            <div class="stat-card"><div class="stat-value">${user.wins || 0}</div><div class="stat-label">Победы</div></div>
+            <div class="stat-card"><div class="stat-value">${winRate}%</div><div class="stat-label">Винрейт</div></div>
+          </div>
+        </div>
+      `;
+      overlay.classList.add('active');
+      $('#modal-close-btn').addEventListener('click', () => overlay.classList.remove('active'));
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('active'); });
+    });
   }
 
   // ──── Duel Setup (with mode selection like Штурм) ────
@@ -3986,6 +4003,14 @@
     showToast(`Сложность изменена: ${data.difficulty}`, 'info');
   });
 
+  // Real-time tournament updates for the main list
+  socket.on('tournaments-updated', () => {
+    console.log('🔄 Real-time tournament update received');
+    if (state.currentScreen === 'tournaments') {
+      renderTournaments();
+    }
+  });
+
   // ──── Quotes Carousel ────
   function initQuotes() {
     renderQuote();
@@ -4290,6 +4315,9 @@
       if (!nav) return;
       if (document.body.classList.contains('in-game')) return; 
       
+      // Don't hide navbar if mobile menu is open
+      if (nav.classList.contains('nav-open')) return;
+
       if (window.scrollY > lastScrollY && window.scrollY > 60) {
         nav.classList.add('nav-hidden');
       } else {
@@ -4653,15 +4681,6 @@
       const winner = data.players.find(p => p.status === 'winner');
       if (winner) showToast(`🏆 Победитель турнира: ${winner.username}!`, 'success');
     }
-    // Refresh lists
-    if ($('#screen-tournaments.active')) renderTournaments();
-    if ($('#screen-admin.active')) loadAdminTournaments();
-  });
-
-  socket.on('tournaments-updated', () => {
-    console.log('[Tournaments] Global update sync');
-    if ($('#screen-tournaments.active')) renderTournaments();
-    if ($('#screen-admin.active')) loadAdminTournaments();
   });
 
   // ── Bug 1.3: Tournament match auto-join fix ──
@@ -4782,7 +4801,6 @@
         if (res.ok) {
           showToast(`Турнир создан: "${res.tournament.name}"`, 'success');
           $('#admin-t-name').value = '';
-          $('#admin-t-ranked').checked = false;
           loadAdminTournaments();
         } else {
           showToast(res.msg, 'error');
@@ -4820,21 +4838,21 @@
         return;
       }
       el.innerHTML = res.tournaments.map(t => `
-        <div class="admin-item" style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:12px;margin-bottom:8px;transition:all 0.3s ease;">
-          <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:12px;margin-bottom:8px;transition:all 0.3s ease;flex-wrap:wrap;gap:12px" class="admin-item">
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:150px">
             <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:1.1rem;font-weight:600;color:var(--text-primary)">${t.name}</span>
-              ${t.is_ranked ? '<span style="background:var(--accent-blue);color:#fff;font-size:0.65rem;padding:2px 6px;border-radius:4px;font-weight:700">🏆 RANKED</span>' : ''}
+               <span style="font-size:1.1rem;font-weight:600;color:var(--text-primary)">${t.name}</span>
+               ${t.is_ranked ? '<span style="font-size:0.7rem;background:var(--accent-blue);color:white;padding:2px 6px;border-radius:4px">RANKED</span>' : ''}
             </div>
             <div style="display:flex;gap:12px;font-size:0.85rem;color:var(--text-muted)">
               <span>Статус: <span style="color:${t.status === 'active' ? '#10b981' : (t.status === 'waiting' ? '#f59e0b' : '#ef4444')}">${t.status.toUpperCase()}</span></span>
               <span>Игроков: ${t.playerCount}/${t.max_players}</span>
             </div>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${t.status === 'waiting' ? `<button class="btn btn-primary btn-sm" onclick="window.adminStartTournament(${t.id})">▶ Запустить</button>` : ''}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex:1">
+            ${t.status === 'waiting' ? `<button class="btn btn-primary btn-sm" onclick="window.adminStartTournament(${t.id})">▶ Старт</button>` : ''}
             <button class="btn btn-secondary btn-sm" onclick="window.adminOpenLobby(${t.id})">🔗 Лобби</button>
-            <button class="btn btn-danger btn-sm" onclick="window.adminCancelTournament(${t.id})">✕ Отменить</button>
+            <button class="btn btn-danger btn-sm" onclick="window.adminCancelTournament(${t.id})" title="Отменить">✕</button>
           </div>
         </div>
       `).join('');

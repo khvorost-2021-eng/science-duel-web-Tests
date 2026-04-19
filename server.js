@@ -20,8 +20,8 @@ const PORT = process.env.PORT || 3001;
 app.use(express.static(path.join(__dirname, "public")));
 
 // ──── Data Stores ────
-const db = require('./database');
 const crypto = require('crypto');
+const db = require('./database');
 const glicko2 = require('glicko2-lite');
 
 function hashPassword(pw) { return Buffer.from(pw + '__sciduel_salt').toString('base64'); }
@@ -272,6 +272,7 @@ async function endGame(roomCode) {
 
   const updatePromises = [];
   const isSolo = room.players.length === 1;
+  const matchUuid = room.matchUuid || crypto.randomUUID();
 
   const p1 = room.players[0];
   const p2 = room.players[1] || { name: 'Bot', score: 0 };
@@ -285,36 +286,39 @@ async function endGame(roomCode) {
   let p1RatingDelta = 0;
   let p2RatingDelta = 0;
 
-  // ── Tournament vs Duel Rating ──
-  const isTournamentRanked = !!room.tournamentMatchId && room.isRanked;
-  
   if (!isSolo && p1Db && p2Db) {
-    if (isTournamentRanked) {
-      // Use Tournament Rating
-      p1RatingInfo = await db.getTournamentRatingForGrade(p1Db.id, p1Db.grade);
-      p2RatingInfo = await db.getTournamentRatingForGrade(p2Db.id, p2Db.grade);
-    }
+    const isTournament = !!room.tournamentMatchId;
+    const isRanked = room.isRanked;
 
-    if (room.isRanked) {
+    if (isRanked) {
       let p1ScoreMath = p1.score > p2.score ? 1 : (p1.score < p2.score ? 0 : 0.5);
       let p2ScoreMath = 1 - p1ScoreMath;
       
-      const newP1 = glicko2(p1RatingInfo.rating, p1RatingInfo.rd, p1RatingInfo.volatility, [[p2RatingInfo.rating, p2RatingInfo.rd, p1ScoreMath]]);
-      const newP2 = glicko2(p2RatingInfo.rating, p2RatingInfo.rd, p2RatingInfo.volatility, [[p1RatingInfo.rating, p1RatingInfo.rd, p2ScoreMath]]);
-      
-      p1RatingDelta = newP1.rating - p1RatingInfo.rating;
-      p2RatingDelta = newP2.rating - p2RatingInfo.rating;
-
-      if (isTournamentRanked) {
-        await db.updateTournamentRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility);
-        await db.updateTournamentRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility);
+      let p1TargetRating, p2TargetRating;
+      if (isTournament) {
+        p1TargetRating = await db.getTournamentRatingForGrade(p1Db.id, p1Db.grade);
+        p2TargetRating = await db.getTournamentRatingForGrade(p2Db.id, p2Db.grade);
       } else {
-        await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility);
-        await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility);
+        p1TargetRating = await db.getRatingForGrade(p1Db.id, p1Db.grade);
+        p2TargetRating = await db.getRatingForGrade(p2Db.id, p2Db.grade);
       }
+      
+      const newP1 = glicko2(p1TargetRating.rating, p1TargetRating.rd, p1TargetRating.volatility, [[p2TargetRating.rating, p2TargetRating.rd, p1ScoreMath]]);
+      const newP2 = glicko2(p2TargetRating.rating, p2TargetRating.rd, p2TargetRating.volatility, [[p1TargetRating.rating, p1TargetRating.rd, p2ScoreMath]]);
+      
+      p1RatingDelta = newP1.rating - p1TargetRating.rating;
+      p2RatingDelta = newP2.rating - p2TargetRating.rating;
+
+      // Update DB
+      await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility, isTournament);
+      await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility, isTournament);
       
       p1RatingInfo = newP1;
       p2RatingInfo = newP2;
+    } else {
+      // For unrated, just fetch current ratings for display without changing them
+      p1RatingInfo = await db.getRatingForGrade(p1Db.id, p1Db.grade);
+      p2RatingInfo = await db.getRatingForGrade(p2Db.id, p2Db.grade);
     }
   }
 
@@ -338,9 +342,11 @@ async function endGame(roomCode) {
     const statsUpdate = {
       totalSolved: (p1Db.totalSolved || 0) + p1.score,
       totalGames:  (p1Db.totalGames  || 0) + 1,
-      xp:          (p1Db.xp || 0) + (p1.score * 5) + (isWin ? 50 : 10),
-      trophies:    (p1Db.trophies || 0) + (isWin ? 3 : 0)
+      xp: (p1Db.xp || 0) + (isWin ? 50 : 20) + (p1.score * 5)
     };
+    
+    // Trophies for wins
+    if (isWin) statsUpdate.trophies = (p1Db.trophies || 0) + 10;
 
     if (isSolo) {
       statsUpdate.soloGames = (p1Db.soloGames || 0) + 1;
@@ -358,7 +364,7 @@ async function endGame(roomCode) {
       score: p1.score,
       is_win: isWin,
       mode: matchMode,
-      match_uuid: room.matchUuid
+      match_uuid: matchUuid
     }));
   }
 
@@ -366,6 +372,7 @@ async function endGame(roomCode) {
     const isWin = p2.score > p1.score;
     const isLoss = p2.score < p1.score;
     const matchMode = room.difficulty || 'easy';
+    
     updatePromises.push(db.updateUserStats(p2.name, {
       totalSolved:   (p2Db.totalSolved  || 0) + p2.score,
       totalGames:    (p2Db.totalGames   || 0) + 1,
@@ -373,21 +380,35 @@ async function endGame(roomCode) {
       wins:          (p2Db.wins         || 0) + (isWin  ? 1 : 0),
       losses:        (p2Db.losses       || 0) + (isLoss ? 1 : 0),
       bestResult:    Math.max(p2Db.bestResult || 0, p2.score),
-      xp:            (p2Db.xp || 0) + (p2.score * 5) + (isWin ? 50 : 10),
-      trophies:      (p2Db.trophies || 0) + (isWin ? 3 : 0)
+      xp: (p2Db.xp || 0) + (isWin ? 50 : 20) + (p2.score * 5),
+      trophies: (p2Db.trophies || 0) + (isWin ? 10 : 0)
     }));
     updatePromises.push(db.recordMatchResult({
       username: p2.name,
       score: p2.score,
       is_win: isWin,
       mode: matchMode,
-      match_uuid: room.matchUuid
+      match_uuid: matchUuid
     }));
   }
-
-  // Save turn history
-  if (room.matchUuid && room.turnsMap) {
-    updatePromises.push(db.recordMatchTurns(room.matchUuid, Object.values(room.turnsMap)));
+  
+  // Save turns history
+  if (room.turnHistory) {
+    const turnsArray = Object.keys(room.turnHistory).map(idx => {
+      const t = room.turnHistory[idx];
+      return {
+        num: parseInt(idx),
+        question: t.question,
+        p1User: p1 ? p1.name : null,
+        p1Ans: t.p1Ans,
+        p2User: p2 ? p2.name : (room.isBotGame ? room.botProfile.name : null),
+        p2Ans: t.p2Ans,
+        correctAns: t.correctAns
+      };
+    });
+    if (turnsArray.length > 0) {
+      updatePromises.push(db.recordMatchTurns(matchUuid, turnsArray));
+    }
   }
 
   await Promise.all(updatePromises);
@@ -555,6 +576,10 @@ io.on("connection", (socket) => {
         });
         const { password: _, ...userNoPw } = user;
         
+        // Fetch tournament rating
+        const tRating = await db.getTournamentRatingForGrade(user.id, user.grade);
+        userNoPw.tournament_rating = tRating ? Math.round(tRating.rating) : 1500;
+        
         const userRating = await db.getRatingForGrade(user.id, user.grade);
         userNoPw.glicko_rating = userRating.rating;
         userNoPw.glicko_rd = userRating.rd;
@@ -679,16 +704,6 @@ io.on("connection", (socket) => {
     } catch (e) { callback({ ok: false, msg: 'Ошибка получения истории' }); }
   });
 
-  socket.on('get-detailed-history', async (data, callback) => {
-    try {
-      const username = data && data.username;
-      const limit = (data && data.limit) || 100;
-      if (!username) return callback({ ok: false, msg: 'Имя пользователя не указано' });
-      const matches = await db.getDetailedMatchHistory(username, limit);
-      callback({ ok: true, matches });
-    } catch (e) { callback({ ok: false, msg: 'Ошибка получения детальной истории' }); }
-  });
-
   // ══════════════════════════════════════════════════
   // ADMIN SYSTEM
   // ══════════════════════════════════════════════════
@@ -795,9 +810,8 @@ io.on("connection", (socket) => {
       const { name, difficulty, isRanked } = data;
       if (!name) return callback({ ok: false, msg: 'Укажите название турнира' });
       const t = await db.createTournament({ name, difficulty: difficulty || 'easy', isRanked: !!isRanked });
+      io.emit('tournaments-updated'); // REAL-TIME BROADCAST
       callback({ ok: true, tournament: t });
-      // Broadcast to all to refresh tournament lists
-      io.emit('tournaments-updated');
     } catch (e) { callback({ ok: false, msg: 'Ошибка создания турнира' }); }
   });
 
@@ -852,18 +866,17 @@ io.on("connection", (socket) => {
           code,
           players: [],
           difficulty: t.difficulty || 'easy',
-          duration: 90, // ── Bug 1.3 fix: tournament rooms need a duration set ──
-          isRanked: false,
+          duration: 90,
+          isRanked: t.is_ranked,
           gameStarted: false,
           isRunning: false,
           problems: [],
           timeLeft: 90,
           chat: [],
-          turns: [],
+          turnHistory: [],
           matchUuid: crypto.randomUUID(),
           tournamentMatchId: match.id,
           tournamentId: match.tournament_id,
-          isRanked: t.is_ranked,
         });
         await db.updateTournamentMatchRoom(match.id, code);
 
@@ -894,7 +907,7 @@ io.on("connection", (socket) => {
       const { matchId } = data;
       const matchRes = await db.pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId]);
       const match = matchRes.rows[0];
-      if (!match) return callback({ ok: false, msg: 'Матч не найден' });
+      if (!match) return callback({ ok: false, msg: 'Match not found' });
       
       await startPendingMatches(match.tournament_id);
       callback({ ok: true });
@@ -923,6 +936,15 @@ io.on("connection", (socket) => {
     } catch (e) { callback({ ok: false, players: [] }); }
   });
 
+  socket.on('get-detailed-history', async (data, callback) => {
+    try {
+      const username = data && data.username;
+      if (!username) return callback({ ok: false });
+      const matches = await db.getDetailedHistory(username, 100);
+      callback({ ok: true, matches });
+    } catch (e) { callback({ ok: false }); }
+  });
+
   // Create a room
   socket.on("create-room", (data) => {
     const code = generateRoomCode();
@@ -948,7 +970,10 @@ io.on("connection", (socket) => {
       createdAt: Date.now(),
       gameStarted: false, 
       chat: [], // New chat array
-      hostId: socket.id // New hostId
+      hostId: socket.id, // New hostId
+      problems: [],
+      turnHistory: [],
+      matchUuid: crypto.randomUUID()
     };
 
     rooms.set(code, room);
@@ -1136,8 +1161,9 @@ io.on("connection", (socket) => {
         timerInterval: null,
         createdAt: Date.now(),
         gameStarted: false,
-        turns: [],
-        matchUuid: crypto.randomUUID(),
+        problems: [],
+        turnHistory: [],
+        matchUuid: crypto.randomUUID()
       };
 
       rooms.set(code, room);
@@ -1228,22 +1254,25 @@ io.on("connection", (socket) => {
       });
     }
 
-    // Record turn history grouped by problem index
-    if (!room.turnsMap) room.turnsMap = {};
-    const pIdx = player.problemIndex - 1;
-    if (!room.turnsMap[pIdx]) {
-      room.turnsMap[pIdx] = {
-        turn_num: pIdx + 1,
-        question: currentProblemData.problem.text,
-        p1_username: room.players[0] ? room.players[0].name : 'Unknown',
-        p1_answer: null,
-        p2_username: room.players[1] ? room.players[1].name : (room.isBotGame ? 'Bot' : 'Unknown'),
-        p2_answer: null,
-        correct_answer: currentProblemData.problem.answer
+    // Record turn in history
+    room.turnHistory = room.turnHistory || {};
+    const problemIdx = player.problemIndex; // This is the index of the problem just answered (before increment in sendPlayerProblem)
+    // Wait, problemIndex was incremented AFTER sending. So the problem answered was problemIndex - 1.
+    const answeredIdx = player.problemIndex; // Actually it's already incremented in sendPlayerProblem which is called after new-problem
+    // Let's check sendPlayerProblem: it increments AFTER getting the data but BEFORE sending.
+    // So if client has problemIndex 1, server has player.problemIndex 1.
+    
+    if (!room.turnHistory[answeredIdx]) {
+      room.turnHistory[answeredIdx] = {
+        question: currentProblemData.problem.expression,
+        correctAns: currentProblemData.problem.answer,
+        p1Ans: null,
+        p2Ans: null
       };
     }
-    if (player.slot === 1) room.turnsMap[pIdx].p1_answer = data.answer;
-    else room.turnsMap[pIdx].p2_answer = data.answer;
+    
+    if (player.slot === 1) room.turnHistory[answeredIdx].p1Ans = data.answer;
+    else if (player.slot === 2) room.turnHistory[answeredIdx].p2Ans = data.answer;
 
     // Send feedback to the answering player
     socket.emit("answer-feedback", {
@@ -1541,7 +1570,9 @@ io.on("connection", (socket) => {
       timeLeft: timeLeft,
       isRunning: true,
       problemIndex: 0,
-      problems: []
+      problems: [],
+      turnHistory: [],
+      matchUuid: crypto.randomUUID(),
     };
 
     // Pre-generate problems

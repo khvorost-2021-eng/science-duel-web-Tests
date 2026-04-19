@@ -569,10 +569,11 @@
               <option value="easy">Лёгкий</option>
               <option value="medium">Средний</option>
               <option value="hard">Сложный</option>
+              <option value="progressive">Прогрессивный</option>
             </select>
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer;">
-              <input type="checkbox" id="admin-t-ranked" style="width:20px;height:20px;accent-color:var(--accent-blue);cursor:pointer;" />
-              <label for="admin-t-ranked" style="font-size:0.9rem;color:var(--text-primary);cursor:pointer;">🏆 Рейтинговый турнир</label>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <input type="checkbox" id="admin-t-ranked" style="width:20px;height:20px;cursor:pointer" checked />
+              <label for="admin-t-ranked" style="font-size:0.9rem;cursor:pointer">Рейтинговый турнир (отдельный Elo)</label>
             </div>
             <button class="btn btn-primary" id="admin-create-btn" style="width:100%">Создать турнир</button>
           </div>
