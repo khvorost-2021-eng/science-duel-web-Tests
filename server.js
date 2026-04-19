@@ -516,10 +516,6 @@ setInterval(async () => {
     }
 }, 30000);
 
-server.listen(PORT, () => {
-  console.log(`[Server] Running on port ${PORT}`);
-});
-
 io.on("connection", (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
