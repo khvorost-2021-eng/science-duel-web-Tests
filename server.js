@@ -430,9 +430,9 @@ async function endGame(roomCode) {
      if (room.tournamentMatchId) {
       await db.recordTournamentMatchResult({
         matchId: room.tournamentMatchId,
-        winner: winnerName,
-        score_p1: room.players[0].score,
-        score_p2: room.players[1].score,
+        winner: winner,
+        score_p1: p1.score,
+        score_p2: p2.score,
         roomCode: roomCode,
       });
       
@@ -945,6 +945,8 @@ io.on("connection", (socket) => {
           matchUuid: crypto.randomUUID(),
           tournamentMatchId: match.id,
           tournamentId: match.tournament_id,
+          player1Name: match.player1,
+          player2Name: match.player2,
         });
         await db.updateTournamentMatchRoom(match.id, code);
 
@@ -1098,17 +1100,26 @@ io.on("connection", (socket) => {
     }
 
     const playerName = data.playerName || `Игрок ${room.players.length + 1}`;
+    let assignedSlot = room.players.length + 1;
+    
+    // Fix: Force correct tournament slots regardless of join order
+    if (room.tournamentMatchId) {
+      if (room.player1Name === playerName) assignedSlot = 1;
+      else if (room.player2Name === playerName) assignedSlot = 2;
+    }
+
     const player = {
       socketId: socket.id,
       name: playerName,
       score: 0,
-      slot: room.players.length + 1,
+      slot: assignedSlot,
       problemIndex: 0, 
     };
 
     room.players.push(player);
     socket.join(code);
     socket.roomCode = code;
+    socket.playerSlot = assignedSlot;
 
     io.to(code).emit("room-update", {
       code: room.code,
@@ -1737,9 +1748,12 @@ function startGame(roomCode) {
     p.problemIndex = 0;
   });
 
+  const p1 = room.players.find(p => p.slot === 1) || room.players[0];
+  const p2 = room.players.find(p => p.slot === 2) || room.players[1];
+
   io.to(roomCode).emit("game-starting", {
-    player1: { name: room.players[0].name, slot: 1 },
-    player2: { name: room.players[1].name, slot: 2 },
+    player1: { name: p1.name, slot: 1 },
+    player2: { name: p2.name, slot: 2 },
     difficulty: room.difficulty,
     timeLeft: room.timeLeft,
   });

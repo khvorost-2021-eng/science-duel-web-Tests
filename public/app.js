@@ -4359,15 +4359,14 @@
 
     const mobileMenuBtn = $('#mobile-menu-btn');
     if (mobileMenuBtn) {
-      const toggleMenu = (e) => {
-        // Simple toggle without preventDefault to avoid blocking other interactions
+      mobileMenuBtn.onclick = (e) => {
+        e.stopPropagation();
         const nav = $('.navbar');
         if (nav) {
           nav.classList.toggle('nav-open');
-          console.log('[MobileMenu] Toggle:', nav.classList.contains('nav-open'));
+          console.log('[MobileMenu] New Toggle State:', nav.classList.contains('nav-open'));
         }
       };
-      mobileMenuBtn.onclick = toggleMenu;
     }
     
     // Close mobile menu when clicking outside
@@ -4547,19 +4546,26 @@
       subtitle.textContent = `⚔️ Олимпийская · ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} · ${t.status === 'waiting' ? 'Ожидание участников' : 'Идёт турнир'}`;
     }
 
-    const timerArea = document.getElementById('tlobby-join-area');
-    if (timerArea) {
-      // Clear previous timer display if any
-      const existingTimer = document.getElementById('tlobby-timer');
-      if (existingTimer) existingTimer.remove();
-      
-      if (t.status === 'waiting' && t.start_at) {
+    // Move timer to a shared area above the bracket/join section
+    const lobbyContent = document.querySelector('#screen-tournament-lobby .screen-content') || document.querySelector('#screen-tournament-lobby');
+    let timerArea = document.getElementById('tlobby-shared-timer-area');
+    if (!timerArea) {
+        timerArea = document.createElement('div');
+        timerArea.id = 'tlobby-shared-timer-area';
+        timerArea.style.textAlign = 'center';
+        timerArea.style.marginBottom = '20px';
+        const header = document.querySelector('.tlobby-header');
+        if (header) header.after(timerArea);
+        else if (lobbyContent) lobbyContent.prepend(timerArea);
+    }
+    
+    timerArea.innerHTML = '';
+    if (t.status === 'waiting' && t.start_at) {
         const timerDiv = document.createElement('div');
         timerDiv.id = 'tlobby-timer';
         timerDiv.className = 'lobby-timer';
-        timerDiv.innerHTML = '⌛ Загрузка времени...';
-        timerArea.prepend(timerDiv);
-      }
+        timerDiv.innerHTML = '⌛ Синхронизация времени...';
+        timerArea.appendChild(timerDiv);
     }
 
     renderTournamentPlayers();
