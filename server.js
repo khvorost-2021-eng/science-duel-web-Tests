@@ -427,14 +427,30 @@ async function endGame(roomCode) {
          tScoreP2 = (p1.name === tMatch.player2) ? p1.score : ((p2.name === tMatch.player2) ? p2.score : 0);
       }
 
+     if (room.tournamentMatchId) {
       await db.recordTournamentMatchResult({
-        matchId:  room.tournamentMatchId,
-        winner,
-        score_p1: tScoreP1,
-        score_p2: tScoreP2,
-        roomCode
+        matchId: room.tournamentMatchId,
+        winner: winnerName,
+        score_p1: room.players[0].score,
+        score_p2: room.players[1].score,
+        roomCode: roomCode,
       });
-      // Notify the tournament room so the bracket updates for everyone
+      
+      const t = await db.getTournament(room.tournamentId);
+      if (t.status === 'finished' && t.winner) {
+          io.emit('tournament-finished-global', {
+              tournamentId: t.id,
+              name: t.name,
+              winner: t.winner
+          });
+          io.to(`tournament-${t.id}`).emit('tournament-updated', {
+              tournament: t,
+              players: await db.getTournamentPlayers(t.id),
+              matches: await db.getTournamentMatches(t.id)
+          });
+      }
+    }
+  // Notify the tournament room so the bracket updates for everyone
       const tid = room.tournamentId;
       const matches  = await db.getTournamentMatches(tid);
       const players  = await db.getTournamentPlayers(tid);
@@ -461,6 +477,49 @@ async function endGame(roomCode) {
 }
 
 // ──── Socket.io ────
+// ──── Tournament Scheduling Processor ────
+setInterval(async () => {
+    try {
+        const now = Date.now();
+        const activeTournaments = await db.listTournaments();
+        const waiting = activeTournaments.filter(t => t.status === 'waiting' && t.start_at && t.start_at <= now);
+        
+        for (const t of waiting) {
+            const players = await db.getTournamentPlayers(t.id);
+            if (players.length >= 2) {
+                console.log(`[Scheduler] Starting tournament #${t.id} (${t.name}) at scheduled time`);
+                const started = await db.startTournament(t.id);
+                const matches = await db.getTournamentMatches(t.id);
+                const updatedPlayers = await db.getTournamentPlayers(t.id);
+                
+                io.emit('tournaments-updated');
+                io.to(`tournament-${t.id}`).emit('tournament-started', {
+                    tournament: started,
+                    matches,
+                    players: updatedPlayers
+                });
+                
+                // Auto-start initial matches
+                await startPendingMatches(t.id);
+            } else {
+                // Not enough players, push back start time by 5 minutes? 
+                // Or just keep waiting. Let's push back to avoid spamming if no one joins.
+                console.log(`[Scheduler] Tournament #${t.id} (${t.name}) has <2 players, postponing 2 mins`);
+                const newStartAt = now + (2 * 60 * 1000);
+                await db.pool.query('UPDATE tournaments SET start_at = $1 WHERE id = $2', [newStartAt, t.id]);
+                io.to(`tournament-${t.id}`).emit('tournament-scheduling-update', { start_at: newStartAt });
+                io.emit('tournaments-updated');
+            }
+        }
+    } catch (err) {
+        console.error('[Scheduler Error]', err);
+    }
+}, 30000);
+
+server.listen(PORT, () => {
+  console.log(`[Server] Running on port ${PORT}`);
+});
+
 io.on("connection", (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
@@ -791,6 +850,13 @@ io.on("connection", (socket) => {
       if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
       if (t.status !== 'waiting') return callback({ ok: false, msg: 'Турнир уже начался' });
       
+      // Grade restriction check
+      const u = await db.getUser(username);
+      const allowed = JSON.parse(t.allowed_grades || '[]');
+      if (allowed.length > 0 && !allowed.includes(u.grade)) {
+        return callback({ ok: false, msg: `Турнир только для ${allowed.join(', ')} классов. Ваш класс: ${u.grade}` });
+      }
+
       const currentPlayers = await db.getTournamentPlayers(tournamentId);
       if (currentPlayers.length >= 8) return callback({ ok: false, msg: 'Турнир заполнен (макс. 8 человек)' });
 
@@ -807,9 +873,15 @@ io.on("connection", (socket) => {
     const u = users.get(socket.id);
     if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
     try {
-      const { name, difficulty, isRanked } = data;
+      const { name, difficulty, isRanked, allowedGrades, startAt } = data;
       if (!name) return callback({ ok: false, msg: 'Укажите название турнира' });
-      const t = await db.createTournament({ name, difficulty: difficulty || 'easy', isRanked: !!isRanked });
+      const t = await db.createTournament({ 
+        name, 
+        difficulty: difficulty || 'easy', 
+        isRanked: !!isRanked,
+        allowed_grades: JSON.stringify(allowedGrades || []),
+        start_at: startAt ? Number(startAt) : null
+      });
       io.emit('tournaments-updated'); // REAL-TIME BROADCAST
       callback({ ok: true, tournament: t });
     } catch (e) { callback({ ok: false, msg: 'Ошибка создания турнира' }); }

@@ -575,6 +575,35 @@
               <input type="checkbox" id="admin-t-ranked" style="width:20px;height:20px;cursor:pointer" checked />
               <label for="admin-t-ranked" style="font-size:0.9rem;cursor:pointer">Рейтинговый турнир (отдельный Elo)</label>
             </div>
+
+            <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Доступные классы</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="5" checked /> 5
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="6" checked /> 6
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="7" checked /> 7
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="8" checked /> 8
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="9" checked /> 9
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="10" checked /> 10
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;cursor:pointer">
+                <input type="checkbox" class="admin-grade-check" value="11" checked /> 11
+              </label>
+            </div>
+
+            <label style="display:block;margin-bottom:6px;font-size:0.9rem;color:var(--text-muted)">Запланировать старт (через X минут)</label>
+            <input id="admin-t-start-delay" type="number" placeholder="0 = запуск вручную" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border-glass);background:rgba(255,255,255,0.07);color:var(--text-primary);margin-bottom:14px;outline:none;" />
+
             <button class="btn btn-primary" id="admin-create-btn" style="width:100%">Создать турнир</button>
           </div>
           <div class="admin-section" style="background:var(--bg-card);border:1px solid var(--border-glass);border-radius:16px;padding:24px">

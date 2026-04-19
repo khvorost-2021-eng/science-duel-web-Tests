@@ -2520,7 +2520,10 @@
               return `
                 <div class="leaderboard-item">
                   <div class="leaderboard-rank">${rankBadge}</div>
-                  <div class="leaderboard-name">${user.username}</div>
+                  <div class="leaderboard-name" style="display:flex;align-items:center;gap:6px">
+                    ${user.username}
+                    ${user.role === 'admin' ? '<span class="admin-badge">🛡️</span>' : ''}
+                  </div>
                   <div class="leaderboard-stats">
                   </div>
                   <div style="flex:0 0 80px;text-align:right;color:var(--success)">
@@ -2704,7 +2707,11 @@
           <div class="profile-container">
             <div class="profile-header-v2">
               <div class="profile-badge-v2">🔬 Профиль исследователя</div>
-              <h1 class="profile-username-v2">${user.username} <span style="font-size:1.2rem;opacity:0.5">#${user.id}</span></h1>
+              <h1 class="profile-username-v2">
+                ${user.username} 
+                ${user.role === 'admin' ? '<span class="admin-badge">🛡️ ADMIN</span>' : ''}
+                <span style="font-size:1.2rem;opacity:0.5">#${user.id}</span>
+              </h1>
               <div class="profile-meta-v2">
                   <span>📅 В системе с ${formatedDate}</span>
                   <span>🏆 Трофеи: ${user.trophies || 0}</span>
@@ -4009,6 +4016,19 @@
     if (state.currentScreen === 'tournaments') {
       renderTournaments();
     }
+    if (state.currentScreen === 'admin') {
+      loadAdminTournaments();
+    }
+  });
+
+  socket.on('tournament-finished-global', (data) => {
+    showToast(`🏆 Турнир "${data.name}" завершён! Победитель: ${data.winner}`, 'success');
+    if (confetti) {
+        confetti({
+          particleCount: 150, scatter: 70, origin: { y: 0.6 },
+          colors: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b']
+        });
+    }
   });
 
   // ──── Quotes Carousel ────
@@ -4330,7 +4350,8 @@
 
     const mobileMenuBtn = $('#mobile-menu-btn');
     if (mobileMenuBtn) {
-      mobileMenuBtn.onclick = (e) => {
+      const toggleMenu = (e) => {
+        e.preventDefault();
         e.stopPropagation();
         const nav = $('.navbar');
         if (nav) {
@@ -4338,6 +4359,8 @@
           console.log('[MobileMenu] Toggle:', nav.classList.contains('nav-open'));
         }
       };
+      mobileMenuBtn.addEventListener('click', toggleMenu);
+      mobileMenuBtn.addEventListener('touchstart', toggleMenu, { passive: false });
     }
     
     // Close mobile menu when clicking outside
@@ -4796,8 +4819,15 @@
       const name = $('#admin-t-name').value.trim();
       const difficulty = $('#admin-t-diff').value;
       const isRanked = $('#admin-t-ranked').checked;
+      
+      const allowedGrades = [];
+      $$('.admin-grade-check:checked').forEach(cb => allowedGrades.push(parseInt(cb.value)));
+      
+      const startMinutes = parseInt($('#admin-t-start-delay').value) || 0;
+      const startAt = startMinutes > 0 ? Date.now() + (startMinutes * 60 * 1000) : null;
+
       if (!name) { showToast('Укажите название!', 'error'); return; }
-      socket.emit('create-tournament', { name, difficulty, isRanked }, (res) => {
+      socket.emit('create-tournament', { name, difficulty, isRanked, allowedGrades, startAt }, (res) => {
         if (res.ok) {
           showToast(`Турнир создан: "${res.tournament.name}"`, 'success');
           $('#admin-t-name').value = '';
@@ -4843,10 +4873,13 @@
             <div style="display:flex;align-items:center;gap:8px">
                <span style="font-size:1.1rem;font-weight:600;color:var(--text-primary)">${t.name}</span>
                ${t.is_ranked ? '<span style="font-size:0.7rem;background:var(--accent-blue);color:white;padding:2px 6px;border-radius:4px">RANKED</span>' : ''}
+               ${t.winner ? `<span class="tournament-winner-badge">🏆 ${t.winner}</span>` : ''}
             </div>
-            <div style="display:flex;gap:12px;font-size:0.85rem;color:var(--text-muted)">
+            <div style="display:flex;gap:12px;font-size:0.85rem;color:var(--text-muted);flex-wrap:wrap">
               <span>Статус: <span style="color:${t.status === 'active' ? '#10b981' : (t.status === 'waiting' ? '#f59e0b' : '#ef4444')}">${t.status.toUpperCase()}</span></span>
               <span>Игроков: ${t.playerCount}/${t.max_players}</span>
+              ${t.start_at ? `<span>Старт: ${new Date(Number(t.start_at)).toLocaleTimeString()}</span>` : ''}
+              ${t.allowed_grades && JSON.parse(t.allowed_grades).length > 0 ? `<span>Классы: ${JSON.parse(t.allowed_grades).join(', ')}</span>` : ''}
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex:1">
