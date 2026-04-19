@@ -54,6 +54,7 @@ async function initDB() {
     console.log('[DB] match_results table initialized');
 
     // Проверка/добавление новых колонок (миграции)
+    const columns = [
       "role VARCHAR(50) DEFAULT 'user'",
       "grade INTEGER DEFAULT 5",
       'bestSolo INTEGER DEFAULT 0',
