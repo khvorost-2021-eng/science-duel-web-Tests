@@ -525,9 +525,12 @@
   <section class="screen" id="screen-admin">
     <div class="profile-container">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:16px;">
-        <div>
-          <h1 style="font-size:1.8rem">🔧 Админ-панель</h1>
-          <p style="color:var(--text-muted)">Управление турнирами и пользователями</p>
+        <div style="display:flex;align-items:center;gap:16px">
+          <button class="btn btn-ghost btn-sm" onclick="navigateTo('home')">←</button>
+          <div>
+            <h1 style="font-size:1.8rem">🔧 Админ-панель</h1>
+            <p style="color:var(--text-muted)">Управление турнирами и пользователями</p>
+          </div>
         </div>
         <div class="admin-tabs">
           <button class="btn btn-sm btn-primary admin-tab-btn" data-tab="users">👥 Пользователи</button>

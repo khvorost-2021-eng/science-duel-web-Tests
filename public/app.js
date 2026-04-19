@@ -2736,10 +2736,19 @@
                     <span class="rating-val-v2" style="color:var(--accent-orange)">${tRating}</span>
                     <span class="rating-label-v2">Турнирный Рейтинг</span>
                   </div>
-                  <div class="stats-mini-row" style="margin-top:20px">
-                    <div class="mini-stat"><b>${wins}</b><span>Поб</span></div>
-                    <div class="mini-stat"><b>${losses}</b><span>Пор</span></div>
-                    <div class="mini-stat"><b>${duelGames}</b><span>Дуэлей</span></div>
+                  <div class="stats-mini-row">
+                    <div class="mini-stat">
+                       <b>${wins}</b>
+                       <span>Побед</span>
+                    </div>
+                    <div class="mini-stat">
+                       <b>${losses}</b>
+                       <span>Поражений</span>
+                    </div>
+                    <div class="mini-stat">
+                       <b>${duelGames}</b>
+                       <span>Матчей</span>
+                    </div>
                   </div>
                 </div>
 
@@ -4351,16 +4360,14 @@
     const mobileMenuBtn = $('#mobile-menu-btn');
     if (mobileMenuBtn) {
       const toggleMenu = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        // Simple toggle without preventDefault to avoid blocking other interactions
         const nav = $('.navbar');
         if (nav) {
           nav.classList.toggle('nav-open');
           console.log('[MobileMenu] Toggle:', nav.classList.contains('nav-open'));
         }
       };
-      mobileMenuBtn.addEventListener('click', toggleMenu);
-      mobileMenuBtn.addEventListener('touchstart', toggleMenu, { passive: false });
+      mobileMenuBtn.onclick = toggleMenu;
     }
     
     // Close mobile menu when clicking outside
@@ -4465,12 +4472,16 @@
       el.innerHTML = res.tournaments.map(t => {
         const statusLabel = t.status === 'waiting' ? '⏳ Ожидание' : '⚡ Активен';
         const statusClass = t.status === 'waiting' ? 'status-waiting' : 'status-active';
+        const startTime = (t.status === 'waiting' && t.start_at) ? 
+          `<div class="tc-start-at" style="font-size:0.85rem;color:var(--accent-orange);margin:8px 0;font-weight:600">🕒 Старт: ${new Date(Number(t.start_at)).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</div>` : '';
+          
         return `
           <div class="tournament-card" data-id="${t.id}">
             <div class="tc-header">
               <div class="tc-name">${t.name}</div>
               <span class="tc-status ${statusClass}">${statusLabel}</span>
             </div>
+            ${startTime}
             <div class="tc-meta">
               ⚔️ Олимпийская система &nbsp;·&nbsp;
               📊 ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} &nbsp;·&nbsp;
@@ -4492,18 +4503,35 @@
 
   // ── Tournament Lobby / Bracket Screen ─────────────────────────────────
   function openTournamentLobby(tournamentId, isAdminView = false) {
+    if (state.lobbyTimer) clearInterval(state.lobbyTimer);
     socket.emit('get-tournament', { id: tournamentId }, (res) => {
       if (!res || !res.ok) { showToast('Турнир не найден', 'error'); return; }
       tournamentState.current = res.tournament;
       tournamentState.matches = res.matches;
       tournamentState.players = res.players;
-      // isAdminView indicates we came from the admin dashboard link
-
-      // Join the socket room for realtime updates
+      
       socket.emit('join-tournament-room', { tournamentId });
-
       renderTournamentLobby();
       navigateTo('tournament-lobby');
+      
+      // Start lobby timer if needed
+      if (res.tournament.status === 'waiting' && res.tournament.start_at) {
+          state.lobbyTimer = setInterval(() => {
+              const now = Date.now();
+              const diff = Number(res.tournament.start_at) - now;
+              const timerEl = document.getElementById('tlobby-timer');
+              if (timerEl) {
+                  if (diff <= 0) {
+                      timerEl.innerHTML = "⌛ Ожидание запуска...";
+                      clearInterval(state.lobbyTimer);
+                  } else {
+                      const mins = Math.floor(diff / 60000);
+                      const secs = Math.floor((diff % 60000) / 1000);
+                      timerEl.innerHTML = `🏁 Старт через: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                  }
+              }
+          }, 1000);
+      }
     });
   }
 
@@ -4515,8 +4543,24 @@
     const title = document.getElementById('tlobby-title');
     const subtitle = document.getElementById('tlobby-subtitle');
     if (title) title.textContent = t.name;
-    if (subtitle) subtitle.textContent =
-      `⚔️ Олимпийская · ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} · ${t.status === 'waiting' ? 'Ожидание участников' : 'Идёт турнир'}`;
+    if (subtitle) {
+      subtitle.textContent = `⚔️ Олимпийская · ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} · ${t.status === 'waiting' ? 'Ожидание участников' : 'Идёт турнир'}`;
+    }
+
+    const timerArea = document.getElementById('tlobby-join-area');
+    if (timerArea) {
+      // Clear previous timer display if any
+      const existingTimer = document.getElementById('tlobby-timer');
+      if (existingTimer) existingTimer.remove();
+      
+      if (t.status === 'waiting' && t.start_at) {
+        const timerDiv = document.createElement('div');
+        timerDiv.id = 'tlobby-timer';
+        timerDiv.className = 'lobby-timer';
+        timerDiv.innerHTML = '⌛ Загрузка времени...';
+        timerArea.prepend(timerDiv);
+      }
+    }
 
     renderTournamentPlayers();
 
@@ -4773,10 +4817,20 @@
     const tabs = $$('.admin-tab-btn');
     const contents = $$('.admin-tab-content');
     
-    // Set default tab visibility
+    // Sync tab buttons with default content visibility
     contents.forEach(c => c.style.display = 'none');
+    tabs.forEach(b => {
+      b.classList.remove('btn-primary');
+      b.classList.add('btn-secondary');
+    });
+
     const defaultTab = $('#admin-tab-users');
+    const defaultBtn = $('[data-tab="users"]');
     if (defaultTab) defaultTab.style.display = 'block';
+    if (defaultBtn) {
+      defaultBtn.classList.remove('btn-secondary');
+      defaultBtn.classList.add('btn-primary');
+    }
 
     tabs.forEach(btn => {
       btn.onclick = () => {
