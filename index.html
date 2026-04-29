@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="SciDuel — научная платформа с математическими дуэлями. Соревнуйтесь в решении примеров и развивайте математические навыки!">
   <title>SciDuel — Наука • Мотивация • Дуэли</title>
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=14">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛️</text></svg>">
 </head>
 <body>
@@ -15,7 +15,7 @@
 
   <!-- Navigation -->
   <nav class="navbar">
-    <div class="navbar-logo" id="nav-logo" style="cursor:pointer">
+    <div class="navbar-logo">
       <div class="logo-icon">⚛️</div>
       <span class="logo-text">SciDuel</span>
     </div>
@@ -25,9 +25,10 @@
       <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
       <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
       <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
-      <button class="btn btn-ghost" id="nav-community-btn">🌍 Сообщество</button>
+      <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
       <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
       <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
+      <button class="btn btn-secondary" id="nav-search-btn" title="Найти соперника">🔍 Поиск игроков</button>
       <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
       <button class="btn btn-primary" id="nav-register-btn">Регистрация</button>
     </div>
@@ -77,20 +78,9 @@
       </div>
     </div>
 
-    <!-- Daily Challenge Section -->
-    <div id="daily-challenge-container"></div>
-
-    <!-- Global Activity Feed -->
-    <div class="activity-feed-section l-container" style="max-width: 900px; padding: var(--spacing-xxl) 0;">
-      <h2 style="margin-bottom: var(--spacing-lg); display:flex; align-items:center; gap: var(--spacing-sm);">📡 Живая лента <span class="live-indicator">LIVE</span></h2>
-      <div id="activity-feed-container" class="l-card" style="min-height:100px;">
-        <!-- Activity items injected here -->
-      </div>
-    </div>
-
     <!-- Features Section -->
     <div class="features-section">
-      <h2 style="margin-top: var(--spacing-xl); margin-bottom: var(--spacing-lg); color:var(--text)">🧠 Режимы игры</h2>
+      <h2 style="margin-top:40px;margin-bottom:24px;color:var(--text)">🧠 Режимы игры</h2>
       <div class="modes-grid">
         <div class="mode-card active-mode" data-mode="basic">
           <div class="mode-icon">➕</div>
@@ -159,7 +149,7 @@
           <div class="step-num">1</div>
           <div class="step-content">
              <h3>Регистрация</h3>
-             <p>Создайте аккаунт, чтобы сохранять свой прогресс и рейтинг Glicko-2</p>
+             <p>Создайте аккаунт, чтобы сохранять свой прогресс и рейтинг</p>
           </div>
         </div>
         <div class="step-card">
@@ -172,50 +162,9 @@
         <div class="step-card">
           <div class="step-num">3</div>
           <div class="step-content">
-             <h3>Рейтинг Glicko-2</h3>
+             <h3>Рейтинг</h3>
              <p>Побеждайте сильных оппонентов, чтобы быстрее подниматься в топ академии. Система учитывает стабильность ваших результатов</p>
           </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══════ COMMUNITY SCREEN ═══════ -->
-  <section class="screen" id="screen-community">
-    <div class="community-container" style="max-width: 900px; margin: 0 auto; padding: 40px 20px;">
-      <div class="section-header" style="text-align:center; margin-bottom:48px;">
-        <div class="hero-badge">🌍 Сообщество SciDuel</div>
-        <h1>Обсуждение задач</h1>
-        <p class="subtitle" style="color:var(--text-secondary); font-size:1.1rem; max-width:600px; margin: 12px auto 0;">
-          Добавляйте интересные задачи, делитесь решениями и обсуждайте их с другими участниками.
-        </p>
-      </div>
-      <div class="community-actions" style="margin-bottom: 24px; text-align: center;">
-        <button class="btn btn-primary btn-lg" id="community-create-task-btn">➕ Добавить задачу</button>
-      </div>
-      <div class="community-grid" id="community-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px;">
-        <!-- Community tasks injected here -->
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══════ COMMUNITY TASK DETAILS SCREEN ═══════ -->
-  <section class="screen" id="screen-community-task-details">
-    <div class="community-container" style="max-width: 900px; margin: 0 auto; padding: 40px 20px;">
-      <button class="btn btn-secondary" id="community-back-btn" style="margin-bottom: 20px;">← Назад в сообщество</button>
-      <div class="community-task-full card" style="background:var(--bg-glass); padding:24px; border-radius:16px; border:1px solid var(--border-glass); margin-bottom: 24px;">
-        <h2 id="community-task-title" style="margin-bottom: 12px;"></h2>
-        <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom: 16px;" id="community-task-author"></div>
-        <p id="community-task-text" style="font-size:1.1rem; line-height:1.6;"></p>
-      </div>
-
-      <div class="chat-container card" style="height: 400px; display: flex; flex-direction: column; background:var(--bg-glass); border:1px solid var(--border-glass); border-radius:16px; padding:16px;">
-        <div class="chat-messages" id="community-chat-messages" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
-          <!-- Chat messages injected here -->
-        </div>
-        <div class="chat-input-area" style="display: flex; gap: 8px; margin-top: 16px;">
-          <input type="text" class="chat-input form-input" id="community-chat-input" placeholder="Написать сообщение..." style="flex: 1; padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white;">
-          <button class="btn btn-primary" id="community-chat-send-btn">Отпр.</button>
         </div>
       </div>
     </div>
@@ -316,17 +265,7 @@
         </article>
 
         <article class="rules-card">
-          <h3>🏆 Марафон (Sudden Death)</h3>
-          <ul>
-            <li>Бесконечный режим с выбором из 4 вариантов ответа.</li>
-            <li>Игра идёт до первой ошибки. Одна ошибка — проигрыш.</li>
-            <li>Задачи подбираются из всех тем и классов вперемешку.</li>
-            <li>Позволяет проверить вашу выносливость и внимательность.</li>
-          </ul>
-        </article>
-
-        <article class="rules-card">
-          <h3>🏆 Рейтинг Glicko-2</h3>
+          <h3>🏆 Рейтинг</h3>
           <ul>
             <li>Рейтинг меняется после рейтинговых онлайн-матчей.</li>
             <li>Победа над сильным оппонентом приносит больше очков.</li>
@@ -376,13 +315,8 @@
   <!-- ═══════ SOLO SETUP (choose difficulty) ═══════ -->
   <section class="screen" id="screen-solo-setup"></section>
 
-  <!-- ═══════ SOLO ARENA SCREEN ═══════ -->
+  <!-- ═══════ SPEED SOLVE ARENA (Штурм) ═══════ -->
   <section class="screen" id="screen-solo-arena"></section>
-
-  <!-- ═══════ MARATHON ARENA SCREEN ═══════ -->
-  <section class="screen" id="screen-marathon">
-    <!-- Content injected via renderMarathon -->
-  </section>
 
   <!-- ═══════ DUEL SETUP SCREEN ═══════ -->
   <section class="screen" id="screen-duel-setup"></section>
@@ -486,17 +420,55 @@
     </div>
   </div>
 
-  <!-- Achievement Unlocked Popup -->
-  <div id="achievement-popup" class="achievement-popup">
-    <div class="achievement-icon-big" id="achievement-icon">🏆</div>
-    <div class="achievement-info">
-      <h4>Новое достижение!</h4>
-      <p id="achievement-name" style="font-weight:700; color:white;"></p>
-      <p id="achievement-desc" style="font-size:0.85rem; color:var(--text-secondary);"></p>
+  <!-- ═══════ TOURNAMENTS SCREEN ═══════ -->
+  <section class="screen" id="screen-tournaments">
+    <div class="profile-container">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <h1 style="font-size:2rem">🏆 Турниры</h1>
+        <button class="btn btn-ghost btn-lg" id="tournaments-back-btn">← Назад</button>
+      </div>
+      <div id="tournaments-list" class="tournaments-list">
+        <div class="loading-spinner">Загрузка...</div>
+      </div>
     </div>
-  </div>
+  </section>
 
+  <!-- ═══════ TOURNAMENT LOBBY/BRACKET SCREEN ═══════ -->
+  <section class="screen" id="screen-tournament-lobby">
+    <div class="profile-container">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1 id="tlobby-title" style="font-size:1.8rem">Турнир</h1>
+          <p id="tlobby-subtitle" style="color:var(--text-muted)"></p>
+        </div>
+        <button class="btn btn-ghost" id="tlobby-back-btn">← К турнирам</button>
+      </div>
+
+      <!-- Participants -->
+      <div class="tournament-panel">
+        <h2 style="margin-bottom:12px">👥 Участники (<span id="tlobby-count">0</span>/8)</h2>
+        <div id="tlobby-players" class="tournament-players-grid"></div>
+        <div id="tlobby-join-area" style="margin-top:16px;text-align:center">
+          <button class="btn btn-primary btn-lg" id="tlobby-join-btn">✅ Записаться</button>
+        </div>
+      </div>
+
+      <!-- Bracket (shown after start) -->
+      <div class="tournament-panel" id="tlobby-bracket-panel" style="display:none">
+        <h2 style="margin-bottom:20px">⚔️ Олимпийская сетка</h2>
+        <div class="bracket-wrap" id="bracket-wrap"></div>
+      </div>
+
+      <!-- Admin panel (shown when adminCode is present) -->
+      <div class="tournament-panel" id="tlobby-admin-panel" style="display:none">
+        <h2 style="margin-bottom:12px">🔧 Администратор</h2>
+        <div id="admin-matches-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

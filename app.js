@@ -1,24 +1,12 @@
-console.log('--- APP.JS LOADED ---');
+/* ═══════════════════════════════════════════
+   SciDuel — Multiplayer Client
+   Socket.io based real-time duel
+   ═══════════════════════════════════════════ */
+
 (function () {
   'use strict';
 
   console.log('🚀 SciDuel Client Initializing...');
-  
-  // Global error diagnostic
-  window.onerror = function(msg, url, lineNo, columnNo, error) {
-    const errorMsg = `Ошибка: ${msg}\nФайл: ${url}\nСтрока: ${lineNo}`;
-    console.error(' [Global Error] ', errorMsg);
-    if (typeof showToast !== 'undefined') {
-      showToast('Произошла критическая ошибка. Проверьте консоль или обновите страницу.', 'error');
-    } else {
-      alert(errorMsg);
-    }
-    return false;
-  };
-  
-  window.onunhandledrejection = function(event) {
-    console.error(' [Unhandled Rejection] ', event.reason);
-  };
 
   // ──── Socket.io connection ────
   const socket = io();
@@ -32,8 +20,23 @@ console.log('--- APP.JS LOADED ---');
   });
 
   socket.on('room-update', (data) => {
+    if (state.pendingTournamentJoin && state.pendingTournamentJoin === data.code) {
+      const me = state.myName || (state.currentUser && state.currentUser.username);
+      const myPlayer = data.players && data.players.find(p => p.name === me);
+      if (myPlayer) state.myPlayerSlot = myPlayer.slot;
+      state.roomCode = data.code;
+      state.difficulty = data.difficulty;
+      state.duration = data.duration || 90;
+      state.pendingTournamentJoin = null;
+      renderLobby(data);
+      navigateTo('lobby');
+      return;
+    }
     renderLobby(data);
-    navigateTo('lobby');
+    // Don't pull out of the results screen automatically
+    if (state.currentScreen !== 'results') {
+      navigateTo('lobby');
+    }
   });
 
   socket.on('new-chat-message', (msg) => {
@@ -44,34 +47,6 @@ console.log('--- APP.JS LOADED ---');
     div.innerHTML = `<span class="chat-name">${msg.sender}</span>${msg.text}`;
     list.appendChild(div);
     list.scrollTop = list.scrollHeight;
-  });
-
-  socket.on('new-activity', (item) => {
-    state.activityFeed.unshift(item);
-    if (state.activityFeed.length > 20) state.activityFeed.pop();
-    renderActivityFeed();
-  });
-
-  socket.on('achievements-unlocked', (data) => {
-    const pop = $('#achievement-popup');
-    if (!pop) return;
-    
-    // Show one by one if multiple
-    let delay = 0;
-    data.achievements.forEach(ach => {
-      setTimeout(() => {
-        $('#achievement-icon').textContent = ach.icon || '🏆';
-        $('#achievement-name').textContent = ach.name;
-        $('#achievement-desc').textContent = ach.description;
-        pop.classList.add('active');
-        playSound('win');
-        
-        setTimeout(() => {
-          pop.classList.remove('active');
-        }, 4000);
-      }, delay);
-      delay += 5000;
-    });
   });
 
   socket.on('room-created', (data) => {
@@ -120,15 +95,14 @@ console.log('--- APP.JS LOADED ---');
       currentTask: null,
       history: []
     },
+    pendingTournamentJoin: null,
     bots: [
       { id: 'novice', name: 'Стажёр-бот', rating: 500, avatar: '🐣', desc: 'Только учится основам математики. Часто ошибается и долго думает.', time: '8-12 сек', accuracy: '70%', role: 'Новичок' },
       { id: 'amateur', name: 'Любитель-бот', rating: 1000, avatar: '👨‍🎓', desc: 'Уже уверенно решает базовые примеры. Неплохой соперник для разминки.', time: '5-8 сек', accuracy: '85%', role: 'Ученик' },
       { id: 'scholar', name: 'Учёный-бот', rating: 1500, avatar: '🧠', desc: 'Быстрый и точный. Ошибки случаются редко. Крепкий орешек для большинства.', time: '3-5 сек', accuracy: '92%', role: 'Исследователь' },
       { id: 'grandmaster', name: 'Гроссмейстер-бот', rating: 2000, avatar: '🏆', desc: 'Почти не совершает ошибок. Решает задачи с молниеносной скоростью.', time: '1.5-3 сек', accuracy: '98%', role: 'Профессор' },
       { id: 'quantum', name: 'Квантовый ИИ', rating: 2500, avatar: '⚛️', desc: 'Вершина математической мысли. Ошибки невозможны. Скорость — за гранью.', time: '0.8-1.5 сек', accuracy: '100%', role: 'Академик' },
-    ],
-    isAuthLoading: false,
-    activityFeed: []
+    ]
   };
 
   // ──── Quotes ────
@@ -146,63 +120,6 @@ console.log('--- APP.JS LOADED ---');
   ];
 
   // ──── Utility helpers ────
-  function $(sel, parent = document) { return parent.querySelector(sel); }
-  function $$(sel, parent = document) { return [...parent.querySelectorAll(sel)]; }
-
-  // Simple MD5 implementation for Gravatar
-  function md5(string) {
-    function k(n) { return Math.sin(n) * 4294967296 | 0; }
-    let b = [1732584193, 4023233417, 2562383102, 271733878], i = 0, a, c, d, j;
-    string = unescape(encodeURIComponent(string));
-    const s = string.length, m = [s << 3];
-    for (; i < s; i++) m[i >> 2] |= (string.charCodeAt(i) & 0xFF) << ((i % 4) << 3);
-    for (i = 0; i < 64; i += 4) {
-      a = b[0]; c = b[1]; d = b[2]; j = b[3];
-      for (let l = 0; l < 64; l++) {
-        let f, g;
-        if (l < 16) { f = (c & d) | (~c & j); g = l; }
-        else if (l < 32) { f = (j & c) | (~j & d); g = (5 * l + 1) % 16; }
-        else if (l < 48) { f = c ^ d ^ j; g = (3 * l + 5) % 16; }
-        else { f = d ^ (c | ~j); g = (7 * l) % 16; }
-        let t = j; j = d; d = c;
-        c = (c + ((a + f + k(l + 1) + (m[g] || 0)) << (l % 4 * 8 | l % 4 * 8) | (a + f + k(l + 1) + (m[g] || 0)) >>> (32 - (l % 4 * 8 | l % 4 * 8)))) | 0;
-        a = t;
-      }
-      b[0] += a; b[1] += c; b[2] += d; b[3] += j;
-    }
-    return b.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
-  }
-
-  function renderUserAvatar(user, size = 'md') {
-    if (!user) return `<div class="user-avatar avatar-${size}">?</div>`;
-    
-    const username = user.username || 'Игрок';
-    const initial = username.charAt(0).toUpperCase();
-    const rating = user.glicko_rating || 1500;
-    const rank = getRank(rating);
-    
-    let avatarContent = `<div class="avatar-initials">${initial}</div>`;
-    
-    if (user.avatar_url) {
-      avatarContent = `<img src="${user.avatar_url}" alt="${username}" onerror="this.style.display='none'">`;
-    } else if (user.email) {
-      const hash = md5(user.email.trim().toLowerCase());
-      avatarContent = `<img src="https://www.gravatar.com/avatar/${hash}?d=mp&s=200" alt="${username}">`;
-    }
-
-    return `
-      <div class="user-avatar avatar-${size} ${rank.class}" title="${username} (${rank.title})">
-        ${avatarContent}
-        <div class="rank-badge-mini">${rank.icon}</div>
-      </div>
-    `;
-  }
-
-  const addSafeListener = (id, event, handler) => {
-    const el = $(id);
-    if (el) el.addEventListener(event, handler);
-  };
-
   function showToast(message, type = 'info') {
     const container = $('.toast-container');
     const toast = document.createElement('div');
@@ -226,60 +143,6 @@ console.log('--- APP.JS LOADED ---');
     if (r < 2200) return { title: 'Профессор', icon: '⚛️', class: 'rank-professor' };
     if (r < 2500) return { title: 'Академик', icon: '👑', class: 'rank-academic' };
     return { title: 'Легенда SciDuel', icon: '🌌', class: 'rank-legend' };
-  }
-
-  function getLevelInfo(xp) {
-    const level = Math.floor(Math.sqrt(xp / 100)) + 1;
-    const currentLevelXp = Math.pow(level - 1, 2) * 100;
-    const nextLevelXp = Math.pow(level, 2) * 100;
-    const progress = ((xp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100;
-    return { level, progress, nextLevelXp, remaining: nextLevelXp - xp };
-  }
-
-  function renderActivityFeed() {
-    const container = $('#activity-feed-container');
-    if (!container || !state.activityFeed || state.activityFeed.length === 0) return;
-
-    const getActivityHtml = (item) => {
-      let icon = '🔔';
-      let text = '';
-      const typeClass = `activity-type-${item.type || 'info'}`;
-      
-      switch(item.type) {
-        case 'win':
-          icon = '⚔️';
-          text = `<span class="activity-user">${item.user}</span> одержал победу в режиме <b>${item.mode}</b>! (+${item.score} очков)`;
-          break;
-        case 'achievement':
-          icon = item.icon || '🏆';
-          text = `<span class="activity-user">${item.user}</span> получил достижение: <b>${item.ach}</b>!`;
-          break;
-        case 'daily':
-          icon = '🎯';
-          text = `<span class="activity-user">${item.user}</span> решил ежедневную задачу!`;
-          break;
-        case 'community':
-          icon = '🌍';
-          text = `<span class="activity-user">${item.user}</span> опубликовал новую задачу: <b>${item.title}</b>`;
-          break;
-        default:
-          text = `<span class="activity-user">${item.user}</span> активничает на платформе!`;
-      }
-
-      const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'сейчас';
-
-      return `
-        <div class="activity-item ${typeClass}">
-          <div class="activity-icon">${icon}</div>
-          <div class="activity-content">
-            <p class="activity-text">${text}</p>
-          </div>
-          <div class="activity-time">${timeStr}</div>
-        </div>
-      `;
-    };
-
-    container.innerHTML = state.activityFeed.map(getActivityHtml).join('');
   }
 
   // ──── Audio Controller (Web Audio API) ────
@@ -356,39 +219,18 @@ console.log('--- APP.JS LOADED ---');
       state.myName = '';
     }
     updateNavbar();
-    if (user) {
-      renderDailyChallenge();
-    }
   }
 
   function loadCurrentUser() {
     const name = localStorage.getItem('sciduel_current');
-    if (!name) {
-      updateNavbar();
-      return;
-    }
-    
-    state.isAuthLoading = true;
-    let received = false;
-    const timeout = setTimeout(() => {
-      if (!received) {
-        state.isAuthLoading = false;
-        updateNavbar();
-        console.warn(' [Auth] loadCurrentUser timeout');
-      }
-    }, 5000);
-
+    if (!name) return;
     socket.emit('get-user', { username: name }, (result) => {
-      received = true;
-      clearTimeout(timeout);
-      state.isAuthLoading = false;
       if (result && result.ok) {
         state.currentUser = result.user;
         state.myName = result.user.username;
         updateNavbar();
       } else {
         localStorage.removeItem('sciduel_current');
-        updateNavbar();
       }
     });
 
@@ -418,37 +260,10 @@ console.log('--- APP.JS LOADED ---');
 
   // ──── Navigation ────
   function navigateTo(screen) {
-    const prevScreen = state.currentScreen;
-    
-    // Safety: If leaving a game screen while running, clean up locally and notify server
-    const gameScreens = ['solo', 'solo-arena', 'duel', 'duel-arena', 'bot-game', 'marathon'];
-    const leavingGame = gameScreens.includes(prevScreen) && !gameScreens.includes(screen);
-    
-    if (leavingGame && state.isRunning) {
-      state.isRunning = false;
-      if (prevScreen === 'solo-arena' || prevScreen === 'solo') {
-        socket.emit('cancel-solo');
-        state.isSolo = false;
-      }
-      // Other modes rely on server-side room leave/disconnect
-    }
-
     state.currentScreen = screen;
     $$('.screen').forEach(s => s.classList.remove('active'));
-    console.log(` [Nav] Navigating to: ${screen}`);
     const target = $(`#screen-${screen}`);
-    if (target) {
-      target.classList.add('active');
-      console.log(` [Nav] Screen ${screen} set to active.`);
-    } else {
-      console.error(` [Nav] Target screen #screen-${screen} NOT FOUND!`);
-    }
-
-    if (screen === 'home') {
-      document.body.classList.remove('in-game');
-      renderDailyChallenge();
-      renderActivityFeed();
-    }
+    if (target) target.classList.add('active');
     
     if (screen !== 'practice') {
       if (typeof MathKeyboard !== 'undefined' && MathKeyboard.hide) {
@@ -468,74 +283,6 @@ console.log('--- APP.JS LOADED ---');
     updateNavbar();
     window.scrollTo(0, 0);
     updateNavHeightVar();
-    
-    if (screen === 'home') {
-      renderDailyChallenge();
-    }
-  }
-
-  function renderDailyChallenge() {
-    const container = $('#daily-challenge-container');
-    if (!container) return;
-    
-    if (!state.currentUser) {
-      container.innerHTML = '';
-      return;
-    }
-
-    container.innerHTML = `
-      <div class="daily-challenge-card skeleton" style="min-height: 200px; margin-top:20px;">
-        <p style="color:var(--text-muted)">Загрузка ежедневного испытания...</p>
-      </div>
-    `;
-
-    socket.emit('get-daily-challenge', {}, (res) => {
-      if (!res || !res.ok) {
-        container.innerHTML = '';
-        return;
-      }
-
-      const { challenge, solved } = res;
-      container.innerHTML = `
-        <div class="daily-challenge-card ${solved ? 'solved' : ''}">
-          <div class="daily-tag">ЕЖЕДНЕВНОЕ ИСПЫТАНИЕ</div>
-          <h2 style="margin-bottom:12px">${solved ? '✅ Испытание пройдено!' : '🎯 Задача дня'}</h2>
-          <p style="color:var(--text-secondary); margin-bottom: var(--spacing-lg);">
-            ${solved ? 'Вы успешно решили сегодняшнюю задачу. Возвращайтесь завтра!' : 'Решите эту задачу первым, чтобы получить бонус к рейтингу!'}
-          </p>
-          
-          <div class="card" style="background:rgba(255,255,255,0.05); padding:20px; border-radius:12px; margin-bottom: var(--spacing-lg);">
-            <p style="font-size:1.4rem; font-weight:700;">${challenge.question}</p>
-          </div>
-
-          ${!solved ? `
-            <div style="display:flex; gap:12px; justify-content:center; align-items:center;">
-              <input type="text" id="daily-answer-input" class="form-input" style="width:150px; text-align:center" placeholder="Ответ">
-              <button class="btn btn-primary" id="daily-submit-btn">Отправить</button>
-            </div>
-          ` : ''}
-        </div>
-      `;
-
-      if (!solved) {
-        addSafeListener('#daily-submit-btn', 'click', () => {
-          const ans = $('#daily-answer-input').value.trim();
-          if (!ans) return;
-          
-          socket.emit('submit-daily-answer', { answer: ans }, (result) => {
-            if (result && result.ok) {
-              showToast('Верно! Испытание дня пройдено!', 'success');
-              renderDailyChallenge();
-              // Refresh user stats for achievements/profile
-              loadCurrentUser();
-            } else {
-              showToast(result.msg || 'Неверно, попробуйте еще раз', 'error');
-              playSound('wrong');
-            }
-          });
-        });
-      }
-    });
   }
 
   function updateNavHeightVar() {
@@ -545,168 +292,151 @@ console.log('--- APP.JS LOADED ---');
     if (h > 0) document.documentElement.style.setProperty('--nav-h', `${h}px`);
   }
 
+  // ──── Inline Navbar Player Search (Lichess-style) ────
+  function initNavSearch() {
+    const input = document.getElementById('nav-search-input');
+    const dropdown = document.getElementById('nav-search-dropdown');
+    if (!input || !dropdown) return;
+
+    let searchTimeout;
+
+    function hideDropdown() {
+      dropdown.classList.remove('open');
+      dropdown.innerHTML = '';
+    }
+
+    function showResults(players) {
+      if (!players || players.length === 0) {
+        dropdown.innerHTML = '<div class="nsd-empty">Игроки не найдены</div>';
+        dropdown.classList.add('open');
+        return;
+      }
+      dropdown.innerHTML = players.map(p => {
+        const rank = getRank(p.glicko_rating || 1500);
+        const initial = p.username.charAt(0).toUpperCase();
+        return `
+          <div class="nsd-row" data-username="${p.username}">
+            <div class="nsd-avatar ${rank.class}">${initial}</div>
+            <div class="nsd-info">
+              <span class="nsd-name">${p.username}</span>
+              <span class="nsd-meta">${rank.icon} ${rank.title} · ${Math.round(p.glicko_rating || 1500)}</span>
+            </div>
+            <span class="nsd-wr">${p.wins || 0}W / ${p.losses || 0}L</span>
+          </div>
+        `;
+      }).join('');
+      dropdown.classList.add('open');
+
+      dropdown.querySelectorAll('.nsd-row').forEach(row => {
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const uname = row.dataset.username;
+          input.value = '';
+          hideDropdown();
+          showUserProfile(uname);
+        });
+      });
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      const q = input.value.trim();
+      if (q.length < 2) { hideDropdown(); return; }
+      dropdown.innerHTML = '<div class="nsd-empty">Поиск...</div>';
+      dropdown.classList.add('open');
+      searchTimeout = setTimeout(() => {
+        socket.emit('search-players', { query: q }, (res) => {
+          showResults(res && res.ok ? res.players : []);
+        });
+      }, 350);
+    });
+
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 2) dropdown.classList.add('open');
+    });
+
+    input.addEventListener('blur', () => {
+      setTimeout(hideDropdown, 180);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { input.value = ''; hideDropdown(); }
+    });
+  }
+
   function updateNavbar() {
     const actionsEl = $('.navbar-actions');
     if (!actionsEl) return;
-    
-    actionsEl.style.flex = "1";
-    actionsEl.style.justifyContent = "space-evenly";
-    
-    const searchHtml = `
-      <div class="nav-search-container" style="position:relative; width: 220px; margin-left: 20px;">
-        <input type="text" id="nav-search-input" placeholder="🔍 Найти игрока..." style="padding:8px 16px; border-radius:20px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); color:white; width:100%; outline:none;" autocomplete="off">
-        <div id="nav-search-results" style="position:absolute; top:calc(100% + 5px); left:0; right:0; background:var(--bg-secondary); border:1px solid var(--border-glass); border-radius:12px; display:none; flex-direction:column; z-index:100; overflow:hidden; box-shadow:0 10px 20px rgba(0,0,0,0.5);"></div>
-      </div>
-    `;
 
-    if (state.currentUser && state.currentUser.username) {
+    if (state.currentUser) {
       const initial = state.currentUser.username.charAt(0).toUpperCase();
       actionsEl.innerHTML = `
+        <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
         <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
         <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
         <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
-        <button class="btn btn-ghost" id="nav-community-btn">🌍 Сообщество</button>
+        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
-        <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Топ</button>
-        
-        ${searchHtml}
-        
-        <div class="nav-user-wrapper" style="margin-left:auto">
-          <div class="navbar-user" id="nav-user-toggle" style="cursor:pointer">
-            ${renderUserAvatar(state.currentUser, 'sm')}
-            <div style="display:flex; flex-direction:column; align-items:flex-start">
-              <span style="font-weight:700">${state.currentUser.username}</span>
-              <span class="level-badge" style="margin-left:0; margin-top:2px">Lvl ${getLevelInfo(state.currentUser.xp || 0).level}</span>
-            </div>
-            <span style="font-size:0.7rem; margin-left:8px; opacity:0.5">▼</span>
-          </div>
-          
-          <div class="user-dropdown" id="user-dropdown">
-            <button class="dropdown-item" id="nav-profile-link">👤 Мой профиль</button>
-            <button class="dropdown-item" id="nav-settings-link">⚙️ Настройки</button>
-            <div class="dropdown-divider"></div>
-            <button class="dropdown-item dropdown-item-danger" id="nav-logout-btn">🚪 Выйти</button>
-          </div>
+        <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
+        <button class="btn btn-ghost" id="nav-tournaments-btn">🏅 Турниры</button>
+        <div class="nav-search-wrap" id="nav-search-wrap">
+          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
+          <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
         </div>
+        <div class="navbar-user" id="nav-profile-btn" style="cursor:pointer">
+          <div class="user-avatar">${initial}</div>
+          <span>${state.currentUser.username}</span>
+        </div>
+        <button class="btn btn-ghost" id="nav-logout-btn">Выйти</button>
       `;
-
-      addSafeListener('#nav-user-toggle', 'click', (e) => {
-        e.stopPropagation();
-        $('#user-dropdown').classList.toggle('active');
-      });
-
-      document.addEventListener('click', () => {
-        $('#user-dropdown')?.classList.remove('active');
-        $('#nav-search-results')?.style.setProperty('display', 'none');
-      }, { once: false });
-
-      $('#user-dropdown')?.addEventListener('click', (e) => e.stopPropagation());
-
-      addSafeListener('#nav-profile-link', 'click', () => {
+      $('#nav-settings-btn').addEventListener('click', () => { initSettings(); navigateTo('settings'); });
+      $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
+      $('#nav-practice-btn').addEventListener('click', () => { renderPracticeMode(); navigateTo('practice'); });
+      $('#nav-bots-btn').addEventListener('click', () => { renderBots(); navigateTo('bots'); });
+      $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
+      $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
+      $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
+      $('#nav-tournaments-btn').addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
+      $('#nav-profile-btn').addEventListener('click', () => {
         renderProfile();
         navigateTo('profile');
-        $('#user-dropdown').classList.remove('active');
       });
-      addSafeListener('#nav-settings-link', 'click', () => {
-        initSettings();
-        navigateTo('settings');
-        $('#user-dropdown').classList.remove('active');
-      });
-      addSafeListener('#nav-logout-btn', 'click', () => {
+      $('#nav-logout-btn').addEventListener('click', () => {
         setCurrentUser(null);
         navigateTo('home');
         showToast('Вы вышли из аккаунта', 'info');
       });
-
-      addSafeListener('#nav-theory-btn', 'click', () => { renderTheory(); navigateTo('theory'); });
-      addSafeListener('#nav-practice-btn', 'click', () => { renderPracticeMode(); navigateTo('practice'); });
-      addSafeListener('#nav-bots-btn', 'click', () => { renderBots(); navigateTo('bots'); });
-      addSafeListener('#nav-rules-btn', 'click', () => navigateTo('rules'));
-      addSafeListener('#nav-leaderboard-btn', 'click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
-      addSafeListener('#nav-community-btn', 'click', () => { renderCommunity(); navigateTo('community'); });
+      initNavSearch();
     } else {
       actionsEl.innerHTML = `
+        <button class="btn btn-ghost" id="nav-settings-btn" title="Настройки">⚙️</button>
         <button class="btn btn-ghost" id="nav-theory-btn">📚 Теория</button>
         <button class="btn btn-ghost" id="nav-practice-btn">📝 Практика</button>
         <button class="btn btn-ghost" id="nav-bots-btn">🤖 Боты</button>
-        <button class="btn btn-ghost" id="nav-community-btn">🌍 Сообщество</button>
+        <button class="btn btn-ghost" id="nav-community-btn">🔵 Сообщество</button>
         <button class="btn btn-ghost" id="nav-rules-btn">📘 Правила</button>
-        <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Топ</button>
-        
-        ${searchHtml}
-        
-        <div style="display:flex; gap:12px; margin-left:auto">
-          <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
-          <button class="btn btn-primary" id="nav-register-btn">Регистрация</button>
+        <button class="btn btn-ghost" id="nav-leaderboard-btn">🏆 Таблица лидеров</button>
+        <button class="btn btn-ghost" id="nav-tournaments-btn">🏅 Турниры</button>
+        <div class="nav-search-wrap" id="nav-search-wrap">
+          <input class="nav-search-input" id="nav-search-input" type="text" placeholder="🔍 Поиск игроков..." autocomplete="off" />
+          <div class="nav-search-dropdown" id="nav-search-dropdown"></div>
         </div>
+        <button class="btn btn-secondary" id="nav-login-btn">Войти</button>
+        <button class="btn btn-primary" id="nav-register-btn">Регистрация</button>
       `;
-
-      addSafeListener('#nav-theory-btn', 'click', () => { renderTheory(); navigateTo('theory'); });
-      addSafeListener('#nav-practice-btn', 'click', () => { renderPracticeMode(); navigateTo('practice'); });
-      addSafeListener('#nav-bots-btn', 'click', () => { renderBots(); navigateTo('bots'); });
-      addSafeListener('#nav-rules-btn', 'click', () => navigateTo('rules'));
-      addSafeListener('#nav-leaderboard-btn', 'click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
-      addSafeListener('#nav-community-btn', 'click', () => { renderCommunity(); navigateTo('community'); });
-      addSafeListener('#nav-login-btn', 'click', () => openModal('login'));
-      addSafeListener('#nav-register-btn', 'click', () => openModal('register'));
-      
-      document.addEventListener('click', () => {
-        $('#nav-search-results')?.style.setProperty('display', 'none');
-      }, { once: false });
-    }
-    
-    // Attach Search Listener
-    const searchInput = $('#nav-search-input');
-    const searchResults = $('#nav-search-results');
-    if (searchInput && searchResults) {
-      searchInput.addEventListener('click', (e) => e.stopPropagation());
-      searchResults.addEventListener('click', (e) => e.stopPropagation());
-      
-      searchInput.addEventListener('input', (e) => {
-        const val = e.target.value.trim();
-        if (val.length < 1) {
-          searchResults.style.display = 'none';
-          return;
-        }
-        
-        socket.emit('search-users', { prefix: val }, (res) => {
-          if (res && res.ok && res.users.length > 0) {
-            searchResults.innerHTML = res.users.map(u => {
-              const rank = getRank(u.glicko_rating);
-              return `
-                <div class="search-user-item" style="padding:10px 16px; display:flex; align-items:center; gap:10px; cursor:pointer; border-bottom:1px solid var(--border-glass);">
-                  ${renderUserAvatar(u, 'sm')}
-                  <div>
-                    <div style="font-weight:600;">${u.username}</div>
-                    <div style="font-size:0.75rem; color:var(--text-secondary);">${rank.icon} ${rank.title}</div>
-                  </div>
-                </div>
-              `;
-            }).join('');
-            
-            // Add click events to items to open profile later
-            $$('.search-user-item', searchResults).forEach((item, index) => {
-              const u = res.users[index];
-              item.onmouseenter = () => item.style.background = 'rgba(255,255,255,0.05)';
-              item.onmouseleave = () => item.style.background = 'transparent';
-              item.onclick = () => {
-                showUserProfile(u.username);
-                searchResults.style.display = 'none';
-                searchInput.value = '';
-              };
-            });
-            searchResults.style.display = 'flex';
-          } else {
-            searchResults.innerHTML = '<div style="padding:12px 16px; color:var(--text-secondary); text-align:center;">Не найдено</div>';
-            searchResults.style.display = 'flex';
-          }
-        });
-      });
+      $('#nav-settings-btn').addEventListener('click', () => { initSettings(); navigateTo('settings'); });
+      $('#nav-theory-btn').addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
+      $('#nav-practice-btn').addEventListener('click', () => { renderPracticeMode(); navigateTo('practice'); });
+      $('#nav-bots-btn').addEventListener('click', () => { renderBots(); navigateTo('bots'); });
+      $('#nav-community-btn').addEventListener('click', () => window.open('https://t.me/sciduel', '_blank'));
+      $('#nav-rules-btn').addEventListener('click', () => navigateTo('rules'));
+      $('#nav-leaderboard-btn').addEventListener('click', () => { renderLeaderboard(); navigateTo('leaderboard'); });
+      $('#nav-tournaments-btn').addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
+      $('#nav-login-btn').addEventListener('click', () => openModal('login'));
+      $('#nav-register-btn').addEventListener('click', () => openModal('register'));
+      initNavSearch();
     }
   }
-
-
-
 
   function renderTheory() {
     const el = $('#theory-container');
@@ -853,11 +583,6 @@ console.log('--- APP.JS LOADED ---');
                 example: ' (2³)² = 2⁶ = 64. А 125⁰ = 1.' 
               },
               { 
-                topic: 'Разложение многочленов на множители', 
-                theory: 'Разложить многочлен на множители — значит представить его в виде произведения. Основные методы: 1) вынесение общего множителя за скобку: 3x² + 6x = 3x(x+2); 2) применение ФСУ: x² - 16 = (x-4)(x+4); 3) группировка слагаемых. Разложение на множители — обратная операция к раскрытию скобок.', 
-                example: 'x² - 5x + 6: ищем числа с суммой -5 и произведением 6. Это -2 и -3. Ответ: (x-2)(x-3).' 
-              },
-              { 
                 topic: 'Многочлены: конструктор из букв', 
                 theory: 'Многочлен — это сумма одночленов (чисел с буквами, например 2x). Мы можем их складывать (приводя подобные слагаемые — это как считать отдельно яблоки и груши) и перемножать. Умножить многочлен на многочлен — значит каждый член одного умножить на каждый член другого. Главное — не потерять знаки!', 
                 example: '(x + 2)(x - 3) = x² - 3x + 2x - 6 = x² - x - 6.' 
@@ -889,28 +614,13 @@ console.log('--- APP.JS LOADED ---');
             points: [
               { 
                 topic: 'Признаки равенства треугольников', 
-                theory: 'Треугольники равны, если: 1-й признак (СУС): две стороны и угол между ними. 2-й признак (УСУ): сторона и два прилежащих угла. 3-й признак (ССС): три стороны. Равные треугольники совпадают при наложении. Это ключевое понятие для доказательства геометрических теорем.', 
-                example: 'Если в двух треугольниках AB=DE, ∠B=∠E, BC=EF — они равны по 1-му признаку (СУС).' 
+                theory: 'Нам не обязательно замерять всё. Треугольники равны, если: 1) У них равны две стороны и угол между ними. 2) У них равна сторона и два прилежащих угла. 3) У них равны все три стороны. Зная это, мы можем доказывать равенство сложных фигур, изучив всего пару элементов.', 
+                example: 'Если вы построили два треугольника со сторонами 3см, 4см и углом 30° между ними — они будут идентичны.' 
               },
               { 
-                topic: 'Равнобедренный треугольник', 
-                theory: 'У равнобедренного треугольника два бедра равны. Теорема: углы при основании равнобедренного треугольника равны. Биссектриса из вершины при бёдрах — одновременно медиана и высота к основанию.', 
-                example: 'Бёдра = 5 см, угол при вершине 100°. Углы при основании = (180−100)/2 = 40° каждый.' 
-              },
-              { 
-                topic: 'Сумма углов треугольника', 
-                theory: 'Сумма всех трёх углов любого треугольника = 180°. Внешний угол треугольника равен сумме двух несмежных с ним внутренних углов. В прямоугольном треугольнике два острых угла в сумме = 90°.', 
-                example: 'В треугольнике два угла: 47° и 83°. Третий = 180 - 47 - 83 = 50°.' 
-              }
-            ]
-          },
-          {
-            title: '4. Геометрия: Параллельные прямые',
-            points: [
-              { 
-                topic: 'Углы при параллельных прямых', 
-                theory: 'Когда секущая пересекает две параллельные прямые, образуются 8 углов. Накрест лежащие углы равны (по разные стороны секущей). Соответственные углы равны (по одну сторону). Односторонние углы в сумме = 180°. Признаки параллельности: равенство накрест лежащих или соответственных углов.', 
-                example: 'Если соответственные углы = 115° — прямые параллельны.' 
+                topic: 'Сумма углов и Параллельность', 
+                theory: 'Запомните навсегда: сумма всех трех углов в любом треугольнике — ровно 180 градусов. Ни больше, ни меньше. Если прямые параллельны и их пересекает третья прямая — образуются пары равных углов (накрест лежащие и соответственные). Это база для проектирования всего: от дорог до звездных карт.', 
+                example: 'В треугольнике два угла по 60°. Третий угол = 180 - 60 - 60 = 60°. Этот треугольник правильный.' 
               }
             ]
           }
@@ -946,37 +656,17 @@ console.log('--- APP.JS LOADED ---');
             ]
           },
           {
-            title: '2. Геометрия: Четырёхугольники',
+            title: '2. Геометрия: Фигуры и Площади',
             points: [
               { 
-                topic: 'Параллелограмм и его свойства', 
-                theory: 'Параллелограмм — фигура, у которой противоположные стороны параллельны. Свойства: противоположные стороны равны, противоположные углы равны, диагонали делятся точкой пересечения пополам. Прямоугольник — параллелограмм с углами 90°. Ромб — с равными сторонами, его диагонали ⊥ и биссектрисы углов.', 
-                example: 'В ромбе диагонали d₁=6 и d₂=8. Площадь = (d₁·d₂)/2 = 24. Сторона = √(3²+4²) = 5.' 
-              },
-              { 
-                topic: 'Трапеция', 
-                theory: 'Трапеция — четырёхугольник, у которого ровно одна пара сторон параллельна (основания). Средняя линия трапеции параллельна основаниям и равна их полусумме: m = (a+b)/2. Площадь трапеции: S = (a+b)/2 · h. В равнобедренной трапеции диагонали равны и углы при основании равны.', 
-                example: 'Основания 6 и 10 см, высота 4 см. Площадь = (6+10)/2 · 4 = 32 см².' 
+                topic: 'Четырехугольники: семья параллелограммов', 
+                theory: 'Параллелограмм — это когда противоположные стороны параллельны. Прямоугольник — это "правильный" параллелограмм с углами 90°. Ромб — параллелограмм, у которого все стороны равны (его диагонали пересекаются под прямым углом — это важно!). Квадрат — это идеальный гибрид: и сторон, и углов у него поровну и они правильные.', 
+                example: 'В ромбе со стороной 5 одна диагональ 6, другая 8. Его площадь = (6*8)/2 = 24.' 
               },
               { 
                 topic: 'Теорема Пифагора: фундамент геометрии', 
-                theory: 'В прямоугольном треугольнике квадрат гипотенузы (самой длинной стороны, напротив прямого угла) равен сумме квадратов катетов: c² = a² + b². Обратная теорема: если c² = a² + b² — треугольник прямоугольный. Применяется для нахождения диагоналей, высот и расстояний.', 
-                example: 'Катеты 3 и 4. c² = 9 + 16 = 25. c = 5. Знаменитый «египетский» треугольник.' 
-              }
-            ]
-          },
-          {
-            title: '3. Геометрия: Подобие треугольников',
-            points: [
-              { 
-                topic: 'Признаки подобия треугольников', 
-                theory: 'Подобные треугольники — одинаковы по форме, но отличаются по размеру. Их соответственные углы равны, а стороны пропорциональны. Признаки подобия: 1) два угла равны (УУ); 2) две стороны пропорциональны и угол между ними равен (СУС); 3) три стороны пропорциональны (ССС). Коэффициент подобия k — отношение соответственных сторон.', 
-                example: 'Стороны треугольников: 3,4,5 и 6,8,10. k=2. Площади относятся как k²=4.' 
-              },
-              { 
-                topic: 'Средняя линия треугольника', 
-                theory: 'Средняя линия треугольника соединяет середины двух его сторон. Теорема: средняя линия параллельна третьей стороне и равна её половине. Доказывается через подобие треугольников. Три средних линии делят треугольник на 4 равных треугольника.', 
-                example: 'В треугольнике со стороной 10 средняя линия, параллельная ей, равна 5.' 
+                theory: 'Работает только в прямоугольном треугольнике. Квадрат гипотенузы (самой длинной стороны) равен сумме квадратов катетов: c² = a² + b². Это самая знаменитая теорема в мире. Она позволяет найти любое расстояние, если вы знаете две стороны прямоугольного треугольника.', 
+                example: 'Катеты 3 и 4. Гипотенуза² = 3² + 4² = 9 + 16 = 25. Сама гипотенуза = 5.' 
               }
             ]
           }
@@ -1012,42 +702,17 @@ console.log('--- APP.JS LOADED ---');
             ]
           },
           {
-            title: '2. Геометрия: Окружность',
-            points: [
-              { 
-                topic: 'Элементы окружности: хорда, дуга, касательная', 
-                theory: 'Окружность — геометрическое место точек, равноудалённых от центра. Хорда — отрезок, соединяющий две точки окружности. Диаметр — наибольшая хорда, проходящая через центр. Касательная — прямая, имеющая с окружностью ровно одну общую точку. Важнейшее свойство: касательная перпендикулярна радиусу в точке касания.', 
-                example: 'Если из внешней точки проведены две касательные к окружности, их длины равны.' 
-              },
-              { 
-                topic: 'Центральный и вписанный углы', 
-                theory: 'Центральный угол — угол с вершиной в центре окружности, равен дуге, которую стягивает. Вписанный угол — угол с вершиной на окружности, стягивающий ту же хорду. Теорема: вписанный угол равен половине центрального, опирающегося на ту же дугу. Все вписанные углы, опирающиеся на одну дугу, равны. Угол, вписанный в полуокружность, = 90°.', 
-                example: 'Центральный угол 80° → вписанный угол, опирающийся на ту же дугу = 40°.' 
-              },
-              { 
-                topic: 'Вписанная окружность треугольника', 
-                theory: 'Вписанная окружность (инокружность) касается каждой из трёх сторон треугольника. Её центр — точка пересечения биссектрис углов треугольника (инцентр). Радиус вписанной окружности: r = S/p, где S — площадь треугольника, p — его полупериметр. В прямоугольном треугольнике: r = (a + b - c)/2.', 
-                example: 'Треугольник со сторонами 3, 4, 5. p=(3+4+5)/2=6. S=6. r=6/6=1. Инцентр на расстоянии 1 от каждой стороны.' 
-              },
-              { 
-                topic: 'Описанная окружность треугольника', 
-                theory: 'Описанная окружность проходит через все три вершины треугольника. Её центр — точка пересечения серединных перпендикуляров сторон (описанный центр, или circumcenter). Радиус описанной окружности: R = abc/(4S), где a, b, c — стороны, S — площадь. По теореме синусов: a/sin(A) = 2R.', 
-                example: 'Прямоугольный треугольник: гипотенуза c = 10. R = c/2 = 5. Центр — середина гипотенузы.' 
-              }
-            ]
-          },
-          {
-            title: '3. Геометрия: Тригонометрия и Векторы',
+            title: '2. Геометрия: Тригонометрия и Векторы',
             points: [
               { 
                 topic: 'Теоремы синусов и косинусов', 
-                theory: 'Расширение теоремы Пифагора на ЛЮБЫЕ треугольники. Теорема косинусов: a² = b² + c² - 2bc·cos(A). Теорема синусов: a/sin(A) = b/sin(B) = c/sin(C) = 2R. С этими инструментами можно разгадать любой треугольник, зная любые три его элемента (кроме трёх углов).', 
-                example: 'Стороны 3 и 4, угол 60°. c² = 9 + 16 - 24·cos(60°) = 25 - 12 = 13. c = √13 ≈ 3.6.' 
+                theory: 'Это расширение теоремы Пифагора на ЛЮБЫЕ треугольники. Теорема косинусов: a² = b² + c² - 2bc*cos(A). Она позволяет найти сторону, если известны две другие и угол между ними. Теорема синусов говорит: стороны треугольника пропорциональны синусам противолежащих углов. С этими двумя инструментами вы можете "разгадать" любой треугольник во Вселенной.', 
+                example: 'Две стороны 3 и 4, угол между ними 60°. Третья сторона² = 9 + 16 - 2*3*4*cos(60°) = 25 - 12 = 13. Сторона = √13.' 
               },
               { 
                 topic: 'Векторы: величина и направление', 
-                theory: 'Вектор — это стрелка с длиной и направлением. Сложение — по правилу треугольника или параллелограмма. Скалярное произведение: a⃗·b⃗ = |a||b|·cos(φ). Если a⃗·b⃗ = 0 — векторы перпендикулярны. Координаты: если a⃗=(x,y), то |a⃗|=√(x²+y²).', 
-                example: 'Вектор a⃗(3;4): |a⃗|=√(9+16)=5. Вектор b⃗(-4;3): |b⃗|=5. a⃗·b⃗=3·(-4)+4·3=0 → ⊥.' 
+                theory: 'Вектор — это не просто число, а стрелка. У него есть длина и направление. Мы можем их складывать по правилу треугольника или параллелограмма. Скалярное произведение векторов позволяет узнать угол между ними. Векторы — это основной язык физики: сила, скорость, ускорение — всё это векторы.', 
+                example: 'Вектор a(3;4) имеет длину √(3²+4²) = 5.' 
               }
             ]
           }
@@ -1312,133 +977,14 @@ console.log('--- APP.JS LOADED ---');
       `;
     }
 
-    // 6. Геометрия: Окружность — вписанная в треугольник
-    if ((text.includes('вписан') || text.includes('инцентр')) && text.includes('треуг')) {
-      // Inscribed circle: triangle with incircle touching all three sides
-      // Triangle vertices: A(100,20), B(20,170), C(180,170). Incenter ~(100,120), r~40
+    // 6. Геометрия: Окружность
+    if (text.includes('окруж') || text.includes('круг') || text.includes('шар') || text.includes('сфера')) {
       return `
         <svg viewBox="0 0 200 200" class="geom-svg">
-          <!-- Triangle -->
-          <polygon points="100,20 20,170 180,170" fill="none" stroke="white" stroke-width="2"/>
-          <!-- Inscribed circle -->
-          <circle cx="100" cy="120" r="42" fill="none" stroke="var(--accent-blue)" stroke-width="2.5"/>
-          <!-- Incenter dot -->
-          <circle cx="100" cy="120" r="3" fill="var(--accent-blue)"/>
-          <!-- Radius line to bottom side -->
-          <line x1="100" y1="120" x2="100" y2="162" stroke="var(--accent-blue)" stroke-width="1.5" stroke-dasharray="4"/>
-          <!-- Right angle mark at tangent point -->
-          <rect x="100" y="155" width="7" height="7" fill="none" stroke="var(--accent-blue)" stroke-width="1"/>
-          <!-- Angle bisectors (dashed) -->
-          <line x1="100" y1="20" x2="100" y2="120" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="3"/>
-          <line x1="20" y1="170" x2="100" y2="120" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="3"/>
-          <line x1="180" y1="170" x2="100" y2="120" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="3"/>
-          <!-- Labels -->
-          <text x="97" y="16" fill="white" font-size="13" text-anchor="middle">A</text>
-          <text x="10" y="178" fill="white" font-size="13">B</text>
-          <text x="185" y="178" fill="white" font-size="13">C</text>
-          <text x="108" y="118" fill="var(--accent-blue)" font-size="12">I</text>
-          <text x="104" y="147" fill="var(--accent-blue)" font-size="11">r</text>
-        </svg>
-      `;
-    }
-
-    // 6b. Геометрия: Описанная окружность треугольника
-    if ((text.includes('описан') || text.includes('circumcenter') || text.includes('circumscrib')) && text.includes('треуг')) {
-      // Circumscribed circle: triangle inscribed in circle
-      // Circle center (100,100), r=75. Triangle: A(100,25), B(35,163), C(165,163)
-      return `
-        <svg viewBox="0 0 200 200" class="geom-svg">
-          <!-- Circumscribed circle -->
-          <circle cx="100" cy="100" r="75" fill="none" stroke="var(--accent-blue)" stroke-width="2.5"/>
-          <!-- Triangle inscribed in circle -->
-          <polygon points="100,25 35,163 165,163" fill="none" stroke="white" stroke-width="2"/>
-          <!-- Circumcenter dot -->
-          <circle cx="100" cy="100" r="3" fill="var(--accent-blue)"/>
-          <!-- Radii to vertices (dashed) -->
-          <line x1="100" y1="100" x2="100" y2="25" stroke="var(--accent-blue)" stroke-width="1.5" stroke-dasharray="4"/>
-          <line x1="100" y1="100" x2="35" y2="163" stroke="rgba(100,180,255,0.5)" stroke-width="1" stroke-dasharray="3"/>
-          <line x1="100" y1="100" x2="165" y2="163" stroke="rgba(100,180,255,0.5)" stroke-width="1" stroke-dasharray="3"/>
-          <!-- Perpendicular bisectors (dashed highlight) -->
-          <line x1="100" y1="94" x2="100" y2="163" stroke="rgba(255,255,255,0.2)" stroke-width="1" stroke-dasharray="2"/>
-          <!-- Labels -->
-          <text x="100" y="18" fill="white" font-size="13" text-anchor="middle">A</text>
-          <text x="22" y="173" fill="white" font-size="13">B</text>
-          <text x="170" y="173" fill="white" font-size="13">C</text>
-          <text x="108" y="99" fill="var(--accent-blue)" font-size="12">O</text>
-          <text x="101" y="63" fill="var(--accent-blue)" font-size="11">R</text>
-        </svg>
-      `;
-    }
-
-    // 6c. Центральный и вписанный углы
-    if (text.includes('центральн') || text.includes('вписанн') && text.includes('угол')) {
-      return `
-        <svg viewBox="0 0 220 200" class="geom-svg">
-          <circle cx="110" cy="105" r="70" fill="none" stroke="white" stroke-width="2"/>
-          <!-- Central angle at center O -->
-          <circle cx="110" cy="105" r="3" fill="white"/>
-          <text x="115" y="103" fill="white" font-size="11">O</text>
-          <!-- Two radii for central angle -->
-          <line x1="110" y1="105" x2="55" y2="45" stroke="var(--accent-blue)" stroke-width="2"/>
-          <line x1="110" y1="105" x2="165" y2="45" stroke="var(--accent-blue)" stroke-width="2"/>
-          <!-- Arc label -->
-          <path d="M 130 70 A 29 29 0 0 0 90 70" fill="none" stroke="var(--accent-blue)" stroke-width="1.5"/>
-          <text x="105" y="68" fill="var(--accent-blue)" font-size="11">2α</text>
-          <!-- Inscribed angle point on circle -->
-          <circle cx="110" cy="175" r="3" fill="white"/>
-          <text x="115" y="178" fill="white" font-size="11">P</text>
-          <line x1="110" y1="175" x2="55" y2="45" stroke="rgba(255,200,100,0.9)" stroke-width="1.5"/>
-          <line x1="110" y1="175" x2="165" y2="45" stroke="rgba(255,200,100,0.9)" stroke-width="1.5"/>
-          <!-- Arc label inscribed -->
-          <text x="88" y="148" fill="rgba(255,200,100,0.9)" font-size="11">α</text>
-          <!-- Points on circle -->
-          <circle cx="55" cy="45" r="3" fill="white"/>
-          <circle cx="165" cy="45" r="3" fill="white"/>
-          <text x="40" y="42" fill="white" font-size="11">A</text>
-          <text x="168" y="42" fill="white" font-size="11">B</text>
-        </svg>
-      `;
-    }
-
-    // 6d. Касательная к окружности
-    if (text.includes('касател') || text.includes('хорда')) {
-      return `
-        <svg viewBox="0 0 220 200" class="geom-svg">
-          <circle cx="100" cy="100" r="65" fill="none" stroke="white" stroke-width="2"/>
+          <circle cx="100" cy="100" r="60" fill="none" stroke="white" stroke-width="2"/>
+          <line x1="100" y1="100" x2="160" y2="100" stroke="var(--accent-blue)" stroke-width="2"/>
           <circle cx="100" cy="100" r="3" fill="white"/>
-          <text x="107" y="99" fill="white" font-size="11">O</text>
-          <!-- Radius to tangent point -->
-          <line x1="100" y1="100" x2="100" y2="35" stroke="var(--accent-blue)" stroke-width="1.5" stroke-dasharray="4"/>
-          <text x="104" y="72" fill="var(--accent-blue)" font-size="11">r</text>
-          <!-- Tangent line (horizontal at top) -->
-          <line x1="30" y1="35" x2="170" y2="35" stroke="rgba(255,200,100,0.9)" stroke-width="2"/>
-          <!-- Right angle mark -->
-          <rect x="100" y="35" width="8" height="8" fill="none" stroke="rgba(255,200,100,0.9)" stroke-width="1.5"/>
-          <!-- Tangent point -->
-          <circle cx="100" cy="35" r="3" fill="rgba(255,200,100,0.9)"/>
-          <text x="104" y="32" fill="rgba(255,200,100,0.9)" font-size="11">T</text>
-          <!-- Chord -->
-          <line x1="45" y1="65" x2="155" y2="145" stroke="rgba(150,255,150,0.8)" stroke-width="1.5"/>
-          <text x="35" y="62" fill="rgba(150,255,150,0.8)" font-size="11">хорда</text>
-          <text x="30" y="28" fill="rgba(255,200,100,0.9)" font-size="11">касательная</text>
-        </svg>
-      `;
-    }
-
-    // 6e. Generic circle
-    if (text.includes('окруж') || text.includes('дуга') || text.includes('круг') || text.includes('шар') || text.includes('сфера')) {
-      return `
-        <svg viewBox="0 0 200 200" class="geom-svg">
-          <circle cx="100" cy="100" r="65" fill="none" stroke="white" stroke-width="2"/>
-          <!-- Radius -->
-          <line x1="100" y1="100" x2="165" y2="100" stroke="var(--accent-blue)" stroke-width="2"/>
-          <circle cx="100" cy="100" r="3" fill="white"/>
-          <text x="128" y="95" fill="var(--accent-blue)" font-size="13">R</text>
-          <!-- Diameter -->
-          <line x1="35" y1="100" x2="165" y2="100" stroke="rgba(255,255,255,0.25)" stroke-width="1" stroke-dasharray="3"/>
-          <!-- Arc labels -->
-          <text x="100" y="25" fill="white" font-size="11" text-anchor="middle">C = 2πR</text>
-          <text x="100" y="180" fill="white" font-size="11" text-anchor="middle">S = πR²</text>
+          <text x="125" y="95" fill="white">r</text>
         </svg>
       `;
     }
@@ -1504,32 +1050,19 @@ console.log('--- APP.JS LOADED ---');
 
   function autoMathWrap(text) {
     if (!text) return '';
-    const keywords = ['Теорема', 'Признак', 'Определение', 'Аксиома', 'Формула', 'Свойство', 'Закон', 'Правило', 'Модуль', 'Пропорция', 'Масштаб', 'Производная', 'Интеграл'];
-    let processed = String(text);
-    
-    // Highlight keywords with premium style
-    keywords.forEach(word => {
-      // Use word boundaries to avoid partial matches
-      const reg = new RegExp(`\\b(${word}[а-я]*)\\b`, 'gi');
-      processed = processed.replace(reg, '<span class="theory-highlight">$1</span>');
-    });
-
-    // Split by tags and whitespace to avoid double wrapping
-    const tokens = processed.split(/(<span.*?>.*?<\/span>|\s+)/g);
+    const src = String(text);
+    const tokens = src.split(/(\s+)/);
     return tokens.map(token => {
-      if (!token || !token.trim() || token.startsWith('<')) return token;
-      
-      const hasMathChars = /[=^√∫π±/*()+\-<>₀-₉×÷]/.test(token);
+      if (!token.trim()) return token;
+      const hasMathChars = /[=^√∫π±/*()+\-<>₀-₉]/.test(token);
       const hasLatinVar = /[a-z]/i.test(token);
       const hasDigit = /\d/.test(token);
-      
       if (hasMathChars || (hasLatinVar && hasDigit)) {
-        return `<span class="math-text interactive">${token}</span>`;
+        return `<span class="math-text">${token}</span>`;
       }
       return token;
     }).join('');
   }
-
 
   function renderTheoryTopicPage(topicData) {
     const el = $('#theory-topic-page');
@@ -1549,75 +1082,46 @@ console.log('--- APP.JS LOADED ---');
         </div>
         <h1>${topicData.topic}</h1>
 
-        <div style="display:flex; flex-wrap:wrap; gap: var(--spacing-lg); align-items:flex-start;">
-          <div style="flex:1; min-width:320px; width: 100%;">
-            <section class="theory-topic-card" style="border-top: 4px solid var(--accent-blue);">
-              <h2 style="color: var(--accent-blue); display:flex; align-items:center; gap:8px;">
-                <span style="font-size:1.2rem">📖</span> Подробное объяснение
-              </h2>
-              <div class="theory-explanation-content" style="font-size:1.05rem; line-height:1.8;">
-                ${autoMathWrap(topicData.theory)}
-              </div>
-              <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-glass); font-size: 0.9rem; color: var(--text-muted); font-style: italic;">
-                💡 Совет: В заданиях важно сначала определить тип задачи, затем выбрать нужное правило и только после этого переходить к вычислениям.
-              </div>
+        <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start;">
+          <div style="flex:1; min-width:300px; width: 100%;">
+            <section class="theory-topic-card">
+              <h2>Подробное объяснение</h2>
+              <p>${autoMathWrap(topicData.theory)} В заданиях важно сначала определить тип задачи, затем выбрать нужное правило и только после этого переходить к вычислениям. Такой порядок снижает количество ошибок и делает решение понятным.</p>
+              <p>Для закрепления темы полезно решить 3-5 задач одного типа: сначала по образцу, затем самостоятельно, а в конце — с самопроверкой по обратному действию или подстановке.</p>
             </section>
           </div>
           
           ${isGeometry ? `
-          <div style="flex:0 1 420px; min-width:300px; position: sticky; top: 100px;">
-            <section class="theory-topic-card" style="border-top: 4px solid var(--accent-cyan);">
-              <h2 style="color: var(--accent-cyan); display:flex; align-items:center; gap:8px;">
-                <span style="font-size:1.2rem">📐</span> Иллюстрация к теме
-              </h2>
-              <div class="geom-diagram" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; border: 1px solid var(--border-glass); box-shadow: inset 0 0 20px rgba(0,0,0,0.2);">
-                ${diagram}
-              </div>
+          <div style="flex:0 1 400px; min-width:280px; position: sticky; top: 80px;">
+            <section class="theory-topic-card">
+              <h2>Иллюстрация к теме</h2>
+              <div class="geom-diagram" style="background: rgba(0,0,0,0.2); padding: 5px; border-radius: 8px;">${diagram}</div>
             </section>
           </div>
           ` : ''}
         </div>
 
-
         ${advanced}
 
-        <section class="theory-topic-card" style="border-top: 4px solid var(--accent-purple);">
-          <h2 style="color: var(--accent-purple); display:flex; align-items:center; gap:8px;">
-            <span style="font-size:1.2rem">⚙️</span> Алгоритм решения
-          </h2>
-          <ol class="theory-steps" style="margin-top:10px;">
-            <li><span class="step-num" style="color:var(--accent-purple); font-weight:800; margin-right:8px;">1.</span> Выпишите из условия все известные данные и то, что нужно найти.</li>
-            <li><span class="step-num" style="color:var(--accent-purple); font-weight:800; margin-right:8px;">2.</span> Определите правило, формулу или признак, который относится к теме.</li>
-            <li><span class="step-num" style="color:var(--accent-purple); font-weight:800; margin-right:8px;">3.</span> Подставьте данные в формулу и выполните вычисления по шагам.</li>
-            <li><span class="step-num" style="color:var(--accent-purple); font-weight:800; margin-right:8px;">4.</span> Сделайте проверку: оценка, подстановка или обратное действие.</li>
+        <section class="theory-topic-card">
+          <h2>Алгоритм решения</h2>
+          <ol>
+            <li>Выпишите из условия все известные данные и то, что нужно найти.</li>
+            <li>Определите правило, формулу или признак, который относится к теме.</li>
+            <li>Подставьте данные в формулу и выполните вычисления по шагам.</li>
+            <li>Сделайте проверку: оценка, подстановка или обратное действие.</li>
           </ol>
         </section>
 
-        <section class="theory-topic-card" style="border-top: 4px solid var(--accent-pink);">
-          <h2 style="color: var(--accent-pink); display:flex; align-items:center; gap:8px;">
-            <span style="font-size:1.2rem">💡</span> Разбор примера
-          </h2>
-          <div class="theory-example-box" style="background: rgba(236, 72, 153, 0.05); padding: 20px; border-radius: var(--radius-lg); margin-top: 15px; border-left: 4px solid var(--accent-pink);">
-            <div style="margin-bottom: 12px;">
-              <strong>Задача:</strong> <span style="font-size:1.1rem">${autoMathWrap(topicData.example)}</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:10px; font-size:0.95rem;">
-              <div style="display:flex; gap:12px;">
-                <span style="flex-shrink:0; width:60px; color:var(--accent-pink); font-weight:700;">Шаг 1:</span>
-                <span>Определяем тему и правило, которое нужно применить.</span>
-              </div>
-              <div style="display:flex; gap:12px;">
-                <span style="flex-shrink:0; width:60px; color:var(--accent-pink); font-weight:700;">Шаг 2:</span>
-                <span>Выполняем вычисления последовательно, без пропуска промежуточных действий.</span>
-              </div>
-              <div style="display:flex; gap:12px;">
-                <span style="flex-shrink:0; width:60px; color:var(--accent-pink); font-weight:700;">Шаг 3:</span>
-                <span>Формулируем ответ и проверяем его на соответствие условию.</span>
-              </div>
-            </div>
-          </div>
+        <section class="theory-topic-card">
+          <h2>Разбор примера</h2>
+          <ol>
+            <li><strong>Задача:</strong> ${autoMathWrap(topicData.example)}</li>
+            <li><strong>Шаг 1:</strong> Определяем тему и правило, которое нужно применить.</li>
+            <li><strong>Шаг 2:</strong> Выполняем вычисления последовательно, без пропуска промежуточных действий.</li>
+            <li><strong>Шаг 3:</strong> Формулируем ответ и проверяем его на соответствие условию.</li>
+          </ol>
         </section>
-
 
         <section class="theory-topic-card">
           <h2>Доказательство / вывод формулы</h2>
@@ -1669,131 +1173,15 @@ console.log('--- APP.JS LOADED ---');
   }
 
   function makeOptions(correct, variants = 4) {
-    if (typeof correct === 'string' && isNaN(Number(correct))) {
-        // For non-numeric correct answers, we need a different approach or predefined options
-        return [correct, "Вариант А", "Вариант Б", "Вариант В"]; 
-    }
     const opts = new Set([String(correct)]);
     while (opts.size < variants) {
-      const dev = randomInt(1, 10);
+      const dev = randomInt(1, 8);
       const val = Number(correct);
       if (!Number.isFinite(val)) break;
       const cand = Math.random() > 0.5 ? val + dev : val - dev;
-      if (cand >= 0) opts.add(String(cand));
+      opts.add(String(cand));
     }
     return shuffle([...opts]);
-  }
-
-  // ──── New Logic Generators ────
-
-  function generateLiarPuzzle(complexity = 1) {
-    const names = ["Балин", "Ори", "Двалин", "Глойн", "Дори", "Нори", "Бифур"];
-    const count = Math.min(3 + complexity, names.length);
-    const subset = names.slice(0, count);
-    
-    // Randomly assign Liar (false) or Truth-teller (true)
-    const states = subset.map(() => Math.random() > 0.5);
-    const liarsCount = states.filter(s => !s).length;
-    
-    const claims = [];
-    subset.forEach((name, i) => {
-      const isTruth = states[i];
-      // Pick a random target (not self)
-      let targetIdx = randomInt(0, count - 1);
-      if (targetIdx === i) targetIdx = (i + 1) % count;
-      
-      const targetName = subset[targetIdx];
-      const targetIsLiar = !states[targetIdx];
-      
-      // If Speaker is Truth-teller, they tell the truth about the target
-      // If Speaker is Liar, they lie about the target
-      const claimLiar = isTruth ? targetIsLiar : !targetIsLiar;
-      
-      if (claimLiar) {
-        claims.push(`${name}: "— ${targetName} — врун!"`);
-      } else {
-        claims.push(`${name}: "— ${targetName} говорит правду!"`);
-      }
-    });
-
-    // Special case for Dori if complexity is high
-    if (complexity >= 2 && count >= 4) {
-      const doriIdx = count - 1;
-      const doriName = subset[doriIdx];
-      // Dori says "Everyone else is a liar"
-      const othersAreAllLiars = states.slice(0, doriIdx).every(s => !s);
-      const doriIsTruth = states[doriIdx];
-      const doriClaim = doriIsTruth ? othersAreAllLiars : !othersAreAllLiars;
-      
-      if (doriClaim) {
-        claims[doriIdx] = `${doriName}: "— Все вы остальные — вруны!"`;
-      } else {
-        claims[doriIdx] = `${doriName}: "— Среди вас есть те, кто говорит правду!"`;
-      }
-    }
-
-    return {
-      question: `Каждый из гномов либо всегда говорит правду, либо всегда лжёт. Между ними произошёл разговор:<br><br>${claims.join('<br>')}<br><br><b>Сколько врунов среди них?</b>`,
-      correct: String(liarsCount),
-      type: 'logic',
-      category: 'liars'
-    };
-  }
-
-  function generateWeighingPuzzle(complexity = 1) {
-    const coins = [9, 12, 13, 27, 31, 81][Math.min(complexity, 5)];
-    // Minimum weighings formula: 3^n >= coins
-    const weighings = Math.ceil(Math.log(coins) / Math.log(3));
-    
-    return {
-      question: `Среди ${coins} одинаковых на вид монет есть одна фальшивая (она тяжелее остальных). Какое <b>минимальное</b> количество взвешиваний на чашечных весах без гирь потребуется, чтобы гарантированно найти её?`,
-      correct: String(weighings),
-      type: 'logic'
-    };
-  }
-
-  function generatePouringPuzzle(complexity = 1) {
-    const a = [3, 5, 4, 7][complexity % 4];
-    const b = [5, 9, 7, 11][complexity % 4];
-    // Target is a multiple of gcd(a,b)
-    const target = (complexity % 2 === 0) ? 1 : 2;
-    
-    return {
-      question: `У вас есть два пустых сосуда объемом ${a} л и ${b} л. Как с их помощью отмерить ровно ${target} л жидкости в один из сосудов? <br>Введите <b>минимальное количество операций</b> (наполнение, переливание или опорожнение).`,
-      // This is a simplified version for the marathon, usually we'd ask for the steps, 
-      // but here we just want the number of moves in the optimal BFS solution.
-      // Logic for 3 and 5 to get 4: (0,5) -> (3,2) -> (0,2) -> (2,0) -> (2,5) -> (3,4) -- 6 moves
-      // For simplicity in the first version, let's just ask "is it possible?" or a fixed known case.
-      correct: complexity === 0 ? "4" : "6", 
-      type: 'logic'
-    };
-  }
-
-  function generateDissectionPuzzle(complexity = 1) {
-    // For simplicity in MVP: 4x4 grid, T-shape or L-shape to be cut into 2 or 4 equal parts
-    const grids = [
-      { 
-        size: 4, 
-        shape: [[1,1],[1,2],[2,1],[2,2],[3,1],[3,2]], // 3x2 rectangle
-        parts: 2,
-        targetShape: [[0,0],[0,1],[1,0]] // 3 cells L-shape or 1x3 rect
-      },
-      {
-        size: 4,
-        shape: [[1,1],[2,1],[3,1],[2,2]], // T-shape (4 cells)
-        parts: 2,
-        targetShape: [[0,0],[1,0]] // 1x2 rect
-      }
-    ];
-    const task = grids[complexity % grids.length];
-    return {
-      question: `Разрежьте фигуру на <b>${task.parts}</b> равные по форме и размеру части. Нажимайте на границы клеток, чтобы провести разрез.`,
-      type: 'dissection',
-      gridSize: task.size,
-      shape: task.shape,
-      partsCount: task.parts,
-      correct: 'interactive'
-    };
   }
 
   function getPracticeBank() {
@@ -1811,18 +1199,6 @@ console.log('--- APP.JS LOADED ---');
           const types = [
             () => { const a = randomInt(3, 8), b = randomInt(4, 10); return { question: `Найдите объем прямоугольного параллелепипеда с измерениями ${a}, ${b} и 5.`, correct: String(a*b*5), type: 'geometry', draw: 'rect', dims: [a, b] }; },
             () => { const a = randomInt(3, 8), b = randomInt(4, 10); return { question: `Площадь прямоугольника равна ${a*b}, а одна из сторон ${a}. Найдите периметр.`, correct: String(2*(a+b)), type: 'geometry', draw: 'rect', dims: [a, '?'] }; }
-          ];
-          return types[randomInt(0, types.length-1)]();
-      }},
-      
-      // ЛОГИКА (Для Марафона и Олимпиад)
-      { grade: 'L', topic: 'topic-logic', label: 'Логические задачи', gen: (level = 'medium') => {
-          const complexity = level === 'olympiad' ? 3 : (level === 'hard' ? 2 : 1);
-          const types = [
-            () => generateLiarPuzzle(complexity),
-            () => generateWeighingPuzzle(complexity),
-            () => generatePouringPuzzle(complexity),
-            () => generateDissectionPuzzle(complexity)
           ];
           return types[randomInt(0, types.length-1)]();
       }},
@@ -2213,12 +1589,7 @@ console.log('--- APP.JS LOADED ---');
       const x = 2.71; // Test point
       const evalExpr = (expr) => {
         try {
-          // Security: only allow safe math characters
-          const safe = expr.replace(/x/g, `(${x})`).replace(/\^/g, '**');
-          if (!/^[\d\s\+\-\*\/\.\(\)\*]+$/.test(safe)) return NaN;
-          // Use Function constructor as safer eval alternative
-          // eslint-disable-next-line no-new-func
-          return new Function('return ' + safe)();
+          return eval(expr.replace(/x/g, `(${x})`).replace(/\^/g, '**'));
         } catch(e) { return NaN; }
       };
       
@@ -2316,126 +1687,6 @@ console.log('--- APP.JS LOADED ---');
     });
     $('#practice-home-btn').addEventListener('click', () => navigateTo('home'));
   }
-
-  // ──── Marathon (Sudden Death) Mode ────
-  function renderMarathon() {
-    state.marathon.active = true;
-    state.marathon.streak = 0;
-    state.marathon.history = [];
-    nextMarathonTask();
-    navigateTo('marathon');
-  }
-
-  function nextMarathonTask() {
-    // Marathon uses ALL topics from the bank
-    const bank = getPracticeBank();
-    const taskGen = bank[randomInt(0, bank.length - 1)];
-    const task = taskGen.gen('medium'); // Default to medium for marathon
-    
-    // Generate 4 options
-    const options = makeOptions(task.correct, 4);
-    
-    state.marathon.currentTask = {
-      ...task,
-      options: options
-    };
-    
-    renderMarathonArena();
-  }
-
-  function renderMarathonArena() {
-    const el = $('#screen-marathon');
-    if (!el) return;
-    
-    const task = state.marathon.currentTask;
-    
-    el.innerHTML = `
-      <div class="arena-container marathon-arena">
-        <div class="arena-header">
-           <div class="arena-badge">🏆 МАРАФОН • Sudden Death</div>
-           <div class="marathon-streak">Прогресс: <span>${state.marathon.streak}</span></div>
-        </div>
-        
-        <div class="arena-card card">
-          <div class="arena-q-box">
-             <div class="arena-q-text">${task.question}</div>
-             ${task.type === 'intervals' ? renderIntervalSVG(task.roots, task.targetSign) : ''}
-             ${task.type === 'geometry' ? renderPracticeGeomSVG(task) : ''}
-          </div>
-          
-          <div class="marathon-options">
-             ${task.options.map(opt => `
-               <button class="btn btn-outline arena-opt-btn" data-val="${opt}">${opt}</button>
-             `).join('')}
-          </div>
-        </div>
-        
-        <div class="arena-footer">
-           <button class="btn btn-ghost" id="marathon-quit-btn">Покинуть забег</button>
-        </div>
-      </div>
-    `;
-    
-    $$('.arena-opt-btn', el).forEach(btn => {
-      btn.addEventListener('click', () => {
-        handleMarathonAnswer(btn.dataset.val);
-      });
-    });
-    
-    $('#marathon-quit-btn')?.addEventListener('click', () => {
-      if (confirm('Вы уверены, что хотите завершить марафон? Ваш прогресс будет потерян.')) {
-        navigateTo('home');
-      }
-    });
-  }
-
-  function handleMarathonAnswer(selected) {
-    const task = state.marathon.currentTask;
-    const isCorrect = String(selected) === String(task.correct);
-    
-    if (isCorrect) {
-      playSound('win');
-      state.marathon.streak += 1;
-      showToast(`Верно! Серия: ${state.marathon.streak}`, 'success');
-      nextMarathonTask();
-    } else {
-      playSound('loss');
-      endMarathon();
-    }
-  }
-
-  function endMarathon() {
-    const el = $('#screen-marathon');
-    if (!el) return;
-    
-    const finalStreak = state.marathon.streak;
-    
-    el.innerHTML = `
-      <div class="arena-container">
-        <div class="result-card card card-shake" style="text-align:center; padding: 40px;">
-           <div style="font-size: 5rem; margin-bottom: 20px;">💀</div>
-           <h1 style="color:var(--danger); margin-bottom: 8px;">Марафон окончен!</h1>
-           <p style="color:var(--text-secondary); margin-bottom: 30px;">Ошибка на этапе #${finalStreak + 1}</p>
-           
-           <div class="result-stats" style="display:flex; justify-content:center; gap:40px; margin-bottom:40px;">
-              <div class="result-stat">
-                 <div class="rs-label">Ваша серия</div>
-                 <div class="rs-val" style="font-size:3rem; color:var(--accent-blue)">${finalStreak}</div>
-              </div>
-           </div>
-           
-           <div class="result-actions" style="display:flex; flex-direction:column; gap:12px;">
-              <button class="btn btn-primary btn-lg" id="marathon-restart-btn">Попробовать снова</button>
-              <button class="btn btn-secondary btn-lg" id="marathon-home-btn">На главную</button>
-           </div>
-        </div>
-      </div>
-    `;
-    
-    $('#marathon-restart-btn').addEventListener('click', () => renderMarathon());
-    $('#marathon-home-btn').addEventListener('click', () => navigateTo('home'));
-  }
-
 
   function getProofOrDerivation(topicData) {
     const text = `${topicData.topic} ${topicData.section}`.toLowerCase();
@@ -3074,17 +2325,7 @@ console.log('--- APP.JS LOADED ---');
   // ──── Leaderboard ────
   function renderLeaderboard(filter = 'all') {
     const screen = $('#screen-leaderboard');
-    if (screen) {
-      screen.innerHTML = `
-        <div class="profile-container" style="max-width:600px">
-          <h1 style="text-align:center;margin-bottom:8px">🏆 Таблица лидеров</h1>
-          <div class="skeleton" style="height:40px; width:200px; margin:0 auto 24px"></div>
-          <div class="leaderboard-list">
-             ${Array(10).fill('<div class="skeleton" style="height:50px; margin-bottom:8px; border-radius:12px"></div>').join('')}
-          </div>
-        </div>
-      `;
-    }
+    if (screen) screen.innerHTML = '<div style="text-align:center;padding:50px">🔍 Загрузка таблицы лидеров...</div>';
     
     socket.emit('get-leaderboard', { filter }, (result) => {
       const el = $('#screen-leaderboard');
@@ -3131,10 +2372,9 @@ console.log('--- APP.JS LOADED ---');
               return `
                 <div class="leaderboard-item">
                   <div class="leaderboard-rank">${rankBadge}</div>
-                  ${renderUserAvatar(user, 'sm')}
-                  <div class="leaderboard-name" style="margin-left: var(--spacing-md)">${user.username}</div>
+                  <div class="leaderboard-name">${user.username}</div>
                   <div class="leaderboard-stats">
-                    <span style="color:var(--color-success)">${user.wins}</span>
+                    <span style="color:var(--success)">${user.wins}</span>
                   </div>
                   <div style="flex:0 0 80px;text-align:right;color:var(--accent-green)">
                     ${user.bestSolo || 0}
@@ -3189,7 +2429,7 @@ console.log('--- APP.JS LOADED ---');
             <input type="password" class="form-input" id="reg-password-confirm" placeholder="Повторите пароль">
             <div class="form-error" id="reg-confirm-error"></div>
           </div>
-          <button type="submit" class="btn btn-primary btn-full" style="margin-top: var(--spacing-sm)">Зарегистрироваться</button>
+          <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Зарегистрироваться</button>
         </form>
         <div class="form-footer">Уже есть аккаунт? <a id="switch-to-login">Войти</a></div>
       `;
@@ -3231,7 +2471,7 @@ console.log('--- APP.JS LOADED ---');
             <input type="password" class="form-input" id="login-password" placeholder="Ваш пароль">
             <div class="form-error" id="login-error"></div>
           </div>
-          <button type="submit" class="btn btn-primary btn-full" style="margin-top: var(--spacing-sm)">Войти</button>
+          <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Войти</button>
         </form>
         <div class="form-footer">Нет аккаунта? <a id="switch-to-register">Зарегистрироваться</a></div>
       `;
@@ -3267,334 +2507,327 @@ console.log('--- APP.JS LOADED ---');
     $('#modal-overlay').classList.remove('active');
   }
 
-  function renderResults(data) {
-    const el = $('#screen-results');
-
-    if (data.isSolo) {
-      renderSoloResults(data);
-      return;
-    }
-
-    const p1 = data.player1;
-    const p2 = data.player2;
-    const iAmP1 = state.myPlayerSlot === 1;
-    const myData = iAmP1 ? p1 : p2;
-    const oppData = (iAmP1 ? p2 : p1) || { name: 'Неизвестный', score: 0, ratingDelta: 0, rating: 1500 };
-
-    const myRating = myData.rating || (state.currentUser ? state.currentUser.glicko_rating : 1500) || 1500;
-    const oppRating = oppData.rating || 1500;
-
-    const isWin = myData.score > oppData.score;
-    const isLoss = myData.score < oppData.score;
-
-    let trophy = isWin ? '🏆' : (myData.score === oppData.score ? '🤝' : '😔');
-    let title = isWin ? 'Победа!' : (myData.score === oppData.score ? 'Ничья!' : 'Поражение');
-    let subtitle = isWin ? 'Великолепная игра! Ваш ум сияет ярче звёзд' : 'Не сдавайтесь! Каждая игра делает вас сильнее';
-    let titleClass = isWin ? 'color-success' : (myData.score === oppData.score ? 'color-warning' : 'color-danger');
-
-    const myRank = getRank(myRating);
-    const oppRank = getRank(oppRating);
-    const levelInfo = getLevelInfo(state.currentUser ? state.currentUser.xp : 0);
-
-    el.innerHTML = `
-      <div class="results-container results-animate">
-        <div class="results-trophy">${trophy}</div>
-        <h1 class="results-title ${titleClass}">${title}</h1>
-        <p class="results-subtitle" style="color:var(--text-secondary); margin-bottom: var(--spacing-xl)">${subtitle}</p>
-
-        <div class="results-cards">
-          <div class="result-card ${isWin ? 'winner' : ''}">
-            <div style="display:flex; justify-content:center; margin-bottom: var(--spacing-md)">
-              ${renderUserAvatar(state.currentUser, 'md')}
-            </div>
-            <div class="result-player-name">🧑 ${myData.name} (Вы)</div>
-            <div class="res-rank ${myRank.class}">${myRank.icon} ${myRank.title}</div>
-            
-            <div class="result-score-container" style="margin-top: var(--spacing-md)">
-              <div class="result-score" style="font-size: 3rem; font-weight: 800">${myData.score}</div>
-              ${data.isRanked && myData.ratingDelta !== undefined ? `
-                <div class="rating-change-badge ${myData.ratingDelta >= 0 ? 'plus' : 'minus'}">
-                  ${myData.ratingDelta >= 0 ? '+' : ''}${myData.ratingDelta}
-                </div>
-              ` : ''}
-            </div>
-
-            <div class="xp-row">
-              <div class="xp-label">
-                <span>Уровень ${levelInfo.level}</span>
-                <span>${state.currentUser.xp} / ${levelInfo.nextLevelXp} XP</span>
-              </div>
-              <div class="xp-bar-bg">
-                <div id="results-xp-fill" class="xp-bar-fill" style="width: ${levelInfo.progress}%"></div>
-              </div>
-              ${data.xpGain ? `<div style="color:var(--color-success); font-size: 0.8rem; margin-top: 4px; font-weight:700">+${data.xpGain} XP!</div>` : ''}
-            </div>
-          </div>
-
-          <div class="result-card ${isLoss ? 'winner' : ''}">
-            <div style="display:flex; justify-content:center; margin-bottom: var(--spacing-md)">
-              ${renderUserAvatar(oppData, 'md')}
-            </div>
-            <div class="result-player-name">👤 ${oppData.name}</div>
-            <div class="res-rank ${oppRank.class}">${oppRank.icon} ${oppRank.title}</div>
-            
-            <div class="result-score-container" style="margin-top: var(--spacing-md)">
-              <div class="result-score" style="font-size: 3rem; font-weight: 800">${oppData.score}</div>
-              ${data.isRanked && oppData.ratingDelta !== undefined ? `
-                <div class="rating-change-badge ${oppData.ratingDelta >= 0 ? 'plus' : 'minus'}">
-                  ${oppData.ratingDelta >= 0 ? '+' : ''}${oppData.ratingDelta}
-                </div>
-              ` : ''}
-            </div>
-          </div>
-        </div>
-
-        <div class="results-actions">
-          <button class="btn btn-primary btn-lg" id="rematch-btn">🔄 Реванш</button>
-          <button class="btn btn-secondary btn-lg" id="change-mode-btn">🚪 В лобби</button>
-          <button class="btn btn-ghost" id="share-results-btn">🔗 Поделиться</button>
-        </div>
-      </div>
-    `;
-
-    if (data.xpGain) {
-      setTimeout(() => {
-        const newXp = (state.currentUser.xp || 0) + data.xpGain;
-        const newLevelInfo = getLevelInfo(newXp);
-        const fill = $('#results-xp-fill');
-        if (fill) fill.style.width = `${newLevelInfo.progress}%`;
-      }, 600);
-    }
-
-    $('#rematch-btn').addEventListener('click', () => {
-      socket.emit('request-rematch');
-      $('#rematch-btn').textContent = '⌛ Ожидание...';
-      $('#rematch-btn').disabled = true;
+  // ──── Shared profile helpers ────
+  function buildSparklineSVG(history, w, h) {
+    if (!history || history.length < 2) return '<div class="sparkline-empty">Недостаточно данных</div>';
+    const vals = history.map(p => p.rating || 1500);
+    const minV = Math.min(...vals), maxV = Math.max(...vals);
+    const range = maxV - minV || 1;
+    const pts = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * w;
+      const y = h - ((v - minV) / range) * (h - 10) - 5;
+      return [x, y];
     });
-
-    $('#change-mode-btn').addEventListener('click', () => {
-      state.roomCode = null;
-      navigateTo('home');
-    });
-
-    $('#share-results-btn')?.addEventListener('click', () => {
-      const text = `Я набрал ${myData.score} очков в SciDuel! 🔥`;
-      navigator.clipboard.writeText(text).then(() => showToast('Текст скопирован!', 'success'));
-    });
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const area = line + ` L${w},${h} L0,${h} Z`;
+    const last = pts[pts.length - 1];
+    return `<svg class="rating-sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <defs><linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path class="sparkline-area" d="${area}"/>
+      <path class="sparkline-line" d="${line}"/>
+      <circle class="sparkline-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4"/>
+    </svg>`;
   }
 
-  // ──── Profile ────
-  function generateProfileHtml(user) {
-    const initial = user.username.charAt(0).toUpperCase();
-    const wins = user.wins || 0;
-    const losses = user.losses || 0;
-    const totalGames = user.totalGames || user.totalgames || 0;
-    const totalsolved = user.totalSolved || user.totalsolved || 0;
-    const bestresult = user.bestResult || user.bestresult || 0;
-    const winRate = totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0;
-    const rating = Math.round(user.glicko_rating || 1500);
-    const userRank = getRank(rating);
-    const levelInfo = getLevelInfo(user.xp || 0);
-
-    return `
-      <div class="profile-header">
-        ${renderUserAvatar(user, 'lg')}
-        <div class="profile-info">
-          <h1>${user.username} <span class="rank-icon-small">${userRank.icon}</span></h1>
-          <p class="academic-level rank-text-${userRank.class}">${userRank.title}</p>
-          
-          <div class="xp-progress-container">
-            <div class="xp-label">
-              <span>Уровень ${levelInfo.level}</span>
-              <span>${Math.round(user.xp || 0)} / ${levelInfo.nextLevelXp} XP</span>
-            </div>
-            <div class="xp-bar-bg">
-              <div class="xp-bar-fill" style="width: ${levelInfo.progress}%"></div>
-            </div>
-            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px">Еще ${Math.round(levelInfo.remaining)} XP до нового уровня</p>
-          </div>
-        </div>
+  function buildDonut(wins, losses, duelGames) {
+    const draws = Math.max(0, duelGames - wins - losses);
+    const total = wins + losses + draws || 1;
+    const wp = wins / total, dp = draws / total;
+    const pct = duelGames > 0 ? Math.round((wins / duelGames) * 100) : 0;
+    const wDeg = wp * 360, dDeg = dp * 360;
+    const grad = `conic-gradient(#10b981 0deg ${wDeg.toFixed(1)}deg, #60a5fa ${wDeg.toFixed(1)}deg ${(wDeg+dDeg).toFixed(1)}deg, #ef4444 ${(wDeg+dDeg).toFixed(1)}deg 360deg)`;
+    return `<div class="profile-donut-wrap">
+      <div class="profile-donut" style="background:${grad}">
+        <div class="profile-donut-hole"><div class="profile-donut-pct">${pct}%</div><div class="profile-donut-sub">Винрейт</div></div>
       </div>
-      <div class="stats-grid">
-        <div class="stat-card stat-card-rating">
-          <div class="stat-value" style="color: var(--accent-blue)">${rating}</div>
-          <div class="stat-label">🏆 Рейтинг Glicko-2</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${wins}</div>
-          <div class="stat-label">Побед</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${losses}</div>
-          <div class="stat-label">Поражений</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${totalGames}</div>
-          <div class="stat-label">Всего игр</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${winRate}%</div>
-          <div class="stat-label">Винрейт</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${totalsolved}</div>
-          <div class="stat-label">Решено задач</div>
-        </div>
+      <div class="profile-donut-legend">
+        <div class="donut-legend-item"><div class="donut-legend-dot" style="background:#10b981"></div>${wins} побед</div>
+        <div class="donut-legend-item"><div class="donut-legend-dot" style="background:#ef4444"></div>${losses} поражений</div>
+        <div class="donut-legend-item"><div class="donut-legend-dot" style="background:#60a5fa"></div>${draws} ничьих</div>
       </div>
-
-      <div class="best-results-section">
-         <h2 style="margin-bottom:16px; font-size:1.4rem">🌟 Лучший результат</h2>
-         <div class="records-grid">
-            <div class="record-item">
-               <div class="record-icon">⚔️</div>
-               <div class="record-info">
-                 <div class="record-value">${bestresult}</div>
-                 <div class="record-label">Дуэль</div>
-               </div>
-            </div>
-         </div>
-      </div>
-
-      <div class="solo-records-section" style="margin-top:24px; margin-bottom:40px">
-        <h2 style="margin-bottom:16px; font-size:1.4rem">⚡ Рекорды Штурма</h2>
-        <div class="records-grid-solo">
-          ${(user.soloRecords && user.soloRecords.length > 0) 
-             ? user.soloRecords.map(r => `
-                <div class="solo-record-card">
-                  <div class="solo-record-mode-name">${difficultyNames[r.mode] || r.mode}</div>
-                  <div class="solo-record-mode-value">${r.score}</div>
-                </div>
-              `).join('')
-             : `<p style="color:var(--text-secondary); font-size:0.9rem">Рекордов пока нет. Попробуйте режим «Штурм»!</p>`
-          }
-        </div>
-      </div>
-
-      <div class="achievements-section" id="achievements-section">
-        <h2 style="margin-bottom:16px; font-size:1.4rem">🏆 Достижения</h2>
-        <div id="achievements-grid" class="achievements-grid">
-          <div class="skeleton" style="height:100px"></div>
-          <div class="skeleton" style="height:100px"></div>
-          <div class="skeleton" style="height:100px"></div>
-        </div>
-      </div>
-
-      <div class="match-history-section" id="match-history-section">
-        <h2 style="margin-bottom:16px; font-size:1.4rem">📜 История матчей</h2>
-        <div id="match-history-list" class="match-history-list">
-          <div style="text-align:center;padding:24px;color:var(--text-muted)">Загрузка...</div>
-        </div>
-      </div>
-    `;
+    </div>`;
   }
 
-  function renderProfile(userArg = null) {
-    if (!state.currentUser && !userArg) { navigateTo('home'); return; }
-
-    const render = (user) => {
-      const isOwn = state.currentUser && state.currentUser.username === user.username;
-      
-      if (isOwn) {
-        state.currentUser = user;
-      }
-      
-      const el = $('#screen-profile');
-      let buttonsHtml = '';
-      
-      if (isOwn) {
-        buttonsHtml = `
-          <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-            <button class="btn btn-primary btn-lg" id="profile-duel-btn">🏠 Создать комнату</button>
-            <button class="btn btn-secondary btn-lg" id="profile-search-btn">🔍 Найти соперника</button>
-            <button class="btn btn-accent btn-lg" id="profile-solo-btn">⚡ Штурм</button>
-          </div>
-        `;
-      }
-
-      el.innerHTML = `
-        <div class="profile-container">
-          ${generateProfileHtml(user)}
-          ${buttonsHtml}
-        </div>
-      `;
-
-      if (isOwn) {
-        $('#profile-duel-btn').addEventListener('click', () => {
-          renderDuelSetup();
-          navigateTo('duel-setup');
-        });
-        $('#profile-search-btn').addEventListener('click', () => {
-          renderMatchmaking();
-          navigateTo('matchmaking');
-        });
-        $('#profile-solo-btn').addEventListener('click', () => {
-          renderSoloSetup('blitz');
-          navigateTo('solo-setup');
-        });
-      }
-
-      // Load match history
-      loadMatchHistory(user.username);
-      // Load achievements
-      loadAchievements(user.username);
-    };
-
-    if (userArg) {
-      render(userArg);
-    } else {
-      socket.emit('get-user', { username: state.currentUser.username }, (result) => {
-        if (!result || !result.ok) { navigateTo('home'); return; }
-        render(result.user);
-      });
-    }
+  function formatMatchDate(ts) {
+    const d = isNaN(Number(ts)) ? new Date(ts) : new Date(Number(ts));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' +
+           d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
 
-  function loadAchievements(username) {
-    socket.emit('get-user-achievements', { username }, (res) => {
-      $$('#achievements-grid').forEach(grid => {
-        if (!res || !res.ok) {
-          grid.innerHTML = '<p>Не удалось загрузить достижения</p>';
-          return;
-        }
-        grid.innerHTML = res.achievements.map(a => `
-          <div class="achievement-card ${a.unlocked ? 'unlocked' : 'locked'}">
-            <div class="achievement-icon">${a.icon || '🏆'}</div>
+  function renderMatchHistoryV2(matches) {
+    if (!matches || !matches.length) return '<div style="text-align:center;padding:32px;color:var(--text-muted)">Нет матчей</div>';
+    const ml = { easy:'Лёгкий', medium:'Средний', hard:'Сложный', algebra:'Алгебра',
+      geometry:'Геометрия', logic:'Логика', blitz:'Блиц', hardcore:'Хардкор', progressive:'Прогрессия' };
+    return '<div class="mh-v2-list">' + matches.map(m => {
+      const solo = String(m.mode).startsWith('solo_');
+      const mk = solo ? m.mode.replace('solo_','') : (m.mode||'easy');
+      const label = solo ? ('⚡ Штурм · '+(ml[mk]||mk)) : ('⚔️ Дуэль · '+(ml[mk]||mk));
+      const res = solo ? 'solo' : (m.is_win ? 'win' : 'loss');
+      const rt  = solo ? 'Штурм' : (m.is_win ? 'Победа' : 'Поражение');
+      return `<div class="mh-v2-item">
+        <div class="mh-v2-result ${res}">${rt}</div>
+        <div class="mh-v2-info"><div class="mh-v2-mode">${label}</div></div>
+        <div class="mh-v2-score">${m.score}</div>
+        <div class="mh-v2-date">${formatMatchDate(m.timestamp)}</div>
+      </div>`;
+    }).join('') + '</div>';
+  }
+
+  // ──── Profile (own) ────
+  function renderProfile() {
+    if (!state.currentUser) { navigateTo('home'); return; }
+    socket.emit('get-user', { username: state.currentUser.username }, (result) => {
+      if (!result || !result.ok) { navigateTo('home'); return; }
+      const user = result.user;
+      state.currentUser = user;
+      Promise.all([
+        new Promise(r => socket.emit('get-best-results',      { username: user.username }, res => r(res))),
+        new Promise(r => socket.emit('get-match-history',     { username: user.username, limit: 20 }, res => r(res))),
+        new Promise(r => socket.emit('get-user-achievements', { username: user.username }, res => r(res)))
+      ]).then(([resBest, resMH, resAch]) => {
+        const el = $('#screen-profile');
+        if (!el) return;
+        const records = (resBest && resBest.ok) ? resBest.records : [];
+        const matches = (resMH   && resMH.ok)   ? resMH.matches   : [];
+        const earned  = (resAch  && resAch.ok)   ? resAch.achievements : [];
+        const allAch  = (resAch  && resAch.ok)   ? resAch.all : [];
+        const initial    = user.username.charAt(0).toUpperCase();
+        const duelGames  = user.duelgames  || user.duelGames  || 0;
+        const wins       = user.wins   || 0;
+        const losses     = user.losses || 0;
+        const rating     = Math.round(user.glicko_rating || 1500);
+        const tRating    = Math.round(user.tournament_rating || 1500);
+        const rank       = getRank(rating);
+        const xp         = user.xp || 0;
+        const totalSolved= user.totalSolved || user.totalsolved || 0;
+        const grade      = user.grade || '';
+        const ratingHistory = user.ratingHistory || [];
+        const tournHistory  = user.tournamentHistory || [];
+        const findBest = mode => { const r = records.find(x => x.mode === mode); return r ? r.best_score : 0; };
+        const bestDuel = user.bestresult || user.bestResult || 0;
+        const recordModes = [
+          { label: '⚔️ Дуэль',        score: bestDuel },
+          { label: '⚡ Штурм Лёгкий',  score: findBest('solo_easy') },
+          { label: '⚡ Штурм Средний', score: findBest('solo_medium') },
+          { label: '⚡ Штурм Сложный', score: findBest('solo_hard') },
+          { label: '🧮 Алгебра',       score: findBest('solo_algebra') },
+          { label: '🧩 Логика',        score: findBest('solo_logic') },
+        ].filter(r => r.score > 0);
+        const earnedIds = earned.map(a => a.id);
+        const achHTML = allAch.length ? allAch.map(a => {
+          const got = earnedIds.includes(a.id);
+          return `<div class="achievement-card ${got ? 'earned' : 'locked'}">
+            <div class="achievement-icon">${a.icon}</div>
             <div class="achievement-name">${a.name}</div>
             <div class="achievement-desc">${a.description}</div>
+            <div class="achievement-xp">+${a.xp} XP</div>
+          </div>`;
+        }).join('') : '<div style="color:var(--text-muted);text-align:center;padding:32px">Нет данных о достижениях</div>';
+
+        el.innerHTML = `<div class="profile-v2">
+          <div class="profile-hero">
+            <div class="profile-hero-top">
+              <div class="profile-v2-avatar ${rank.class}">${initial}</div>
+              <div class="profile-v2-names">
+                <h1>${user.username} ${rank.icon}</h1>
+                <div class="profile-v2-rank-title">${rank.title}</div>
+                <div class="profile-v2-meta">
+                  ${grade ? `<span class="profile-v2-badge">🏫 ${grade} класс</span>` : ''}
+                  <span class="profile-v2-badge">⭐ ${xp} XP</span>
+                  <span class="profile-v2-badge">📚 ${totalSolved} задач</span>
+                </div>
+              </div>
+            </div>
+            <div class="profile-stat-pills">
+              <div class="stat-pill"><div class="stat-pill-val">${rating}</div><div class="stat-pill-label">Рейтинг</div></div>
+              <div class="stat-pill"><div class="stat-pill-val">${wins}</div><div class="stat-pill-label">Победы</div></div>
+              <div class="stat-pill"><div class="stat-pill-val">${losses}</div><div class="stat-pill-label">Поражения</div></div>
+              <div class="stat-pill"><div class="stat-pill-val">${duelGames}</div><div class="stat-pill-label">Дуэлей</div></div>
+              <div class="stat-pill"><div class="stat-pill-val">${tRating}</div><div class="stat-pill-label">Турнир</div></div>
+            </div>
           </div>
-        `).join('');
+          <div class="profile-tabs-nav">
+            <button class="profile-tab-btn active" data-tab="stats">📊 Статистика</button>
+            <button class="profile-tab-btn" data-tab="history">📜 История</button>
+            <button class="profile-tab-btn" data-tab="achievements">🏅 Достижения</button>
+            <button class="profile-tab-btn" data-tab="tournament">🏆 Турниры</button>
+          </div>
+          <div class="profile-tab-pane active" id="ptab-stats">
+            <div class="profile-charts-row">
+              <div class="profile-chart-card">
+                <div class="profile-chart-title">📈 История рейтинга</div>
+                ${buildSparklineSVG(ratingHistory, 400, 100)}
+              </div>
+              <div class="profile-chart-card">
+                <div class="profile-chart-title">🥊 Дуэли</div>
+                ${buildDonut(wins, losses, duelGames)}
+              </div>
+            </div>
+            ${recordModes.length > 0 ? `
+            <div class="profile-chart-card">
+              <div class="profile-chart-title">🌟 Личные рекорды</div>
+              <div class="profile-records-grid">
+                ${recordModes.map(r => `<div class="profile-record-card"><div class="profile-record-mode">${r.label}</div><div class="profile-record-score">${r.score}</div></div>`).join('')}
+              </div>
+            </div>` : ''}
+          </div>
+          <div class="profile-tab-pane" id="ptab-history">
+            <div class="profile-chart-card">${renderMatchHistoryV2(matches)}</div>
+          </div>
+          <div class="profile-tab-pane" id="ptab-achievements">
+            <div class="achievements-grid">${achHTML}</div>
+          </div>
+          <div class="profile-tab-pane" id="ptab-tournament">
+            <div class="tournament-rating-hero">
+              <div class="t-rating-icon">🏆</div>
+              <div><div class="t-rating-val">${tRating}</div><div class="t-rating-label">Турнирный рейтинг</div></div>
+            </div>
+            <div class="profile-chart-card">
+              <div class="profile-chart-title">📈 История турнирного рейтинга</div>
+              ${buildSparklineSVG(tournHistory, 400, 100)}
+            </div>
+          </div>
+          <div class="profile-actions-bar">
+            <button class="btn btn-primary" id="profile-duel-btn">🏠 Создать комнату</button>
+            <button class="btn btn-secondary" id="profile-search-btn">🔍 Найти соперника</button>
+            <button class="btn btn-accent" id="profile-solo-btn">⚡ Штурм</button>
+            <button class="btn btn-ghost" id="profile-back-btn">← На главную</button>
+          </div>
+        </div>`;
+
+        el.querySelectorAll('.profile-tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            el.querySelectorAll('.profile-tab-btn').forEach(b => b.classList.remove('active'));
+            el.querySelectorAll('.profile-tab-pane').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            const pane = el.querySelector('#ptab-' + btn.dataset.tab);
+            if (pane) pane.classList.add('active');
+          });
+        });
+        $('#profile-duel-btn').addEventListener('click', () => { renderDuelSetup(); navigateTo('duel-setup'); });
+        $('#profile-search-btn').addEventListener('click', () => { renderMatchmaking(); navigateTo('matchmaking'); });
+        $('#profile-solo-btn').addEventListener('click', () => { renderSoloSetup('blitz'); navigateTo('solo-setup'); });
+        $('#profile-back-btn').addEventListener('click', () => navigateTo('home'));
       });
     });
   }
 
-  function loadMatchHistory(username) {
-    socket.emit('get-match-history', { username, limit: 10 }, (result) => {
-      const listEl = $('#match-history-list');
-      if (!listEl) return;
+  // ──── Player Search Modal ────
+  function openPlayerSearch() {
+    const existing = document.getElementById('player-search-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'player-search-modal';
+    modal.className = 'player-search-overlay';
+    modal.innerHTML = `<div class="player-search-card">
+      <div class="player-search-header"><h3>🔍 Поиск игроков</h3><button class="ps-close" id="ps-close-btn">✕</button></div>
+      <div class="player-search-input-row">
+        <input class="form-input ps-input" id="ps-input" type="text" placeholder="Введите никнейм (минимум 2 символа)..." autocomplete="off"/>
+        <button class="btn btn-primary" id="ps-search-btn">Найти</button>
+      </div>
+      <div id="ps-results" class="ps-results-list"><p class="ps-hint">Начните вводить имя игрока</p></div>
+    </div>`;
+    document.body.appendChild(modal);
+    const input = modal.querySelector('#ps-input');
+    const resultsEl = modal.querySelector('#ps-results');
+    let searchTimeout;
+    function doSearch() {
+      const q = input.value.trim();
+      if (q.length < 2) { resultsEl.innerHTML = '<p class="ps-hint">Введите минимум 2 символа</p>'; return; }
+      resultsEl.innerHTML = '<p class="ps-hint">Поиск...</p>';
+      socket.emit('search-players', { query: q }, (res) => {
+        if (!res.ok || !res.players || !res.players.length) { resultsEl.innerHTML = '<p class="ps-hint">Игроки не найдены</p>'; return; }
+        resultsEl.innerHTML = res.players.map(p => {
+          const rank = getRank(p.glicko_rating || 1500);
+          return `<div class="ps-player-row" data-username="${p.username}">
+            <div class="ps-avatar ${rank.class}">${p.username.charAt(0).toUpperCase()}</div>
+            <div class="ps-info"><div class="ps-name">${p.username} ${rank.icon}</div><div class="ps-stats">${rank.title} · ${Math.round(p.glicko_rating||1500)} · ${p.wins||0}W/${p.losses||0}L</div></div>
+            <button class="btn btn-primary ps-profile-btn" data-username="${p.username}">Профиль</button>
+          </div>`;
+        }).join('');
+        modal.querySelectorAll('.ps-profile-btn').forEach(btn => {
+          btn.addEventListener('click', () => { modal.remove(); showUserProfile(btn.dataset.username); });
+        });
+      });
+    }
+    input.addEventListener('input', () => { clearTimeout(searchTimeout); searchTimeout = setTimeout(doSearch, 400); });
+    modal.querySelector('#ps-search-btn').addEventListener('click', doSearch);
+    modal.querySelector('#ps-close-btn').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    setTimeout(() => input.focus(), 50);
+  }
 
-      if (!result || !result.ok || !result.matches || result.matches.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted)">Пока нет завершённых матчей</div>';
-        return;
-      }
-
-      listEl.innerHTML = result.matches.map(m => {
-        const date = new Date(m.timestamp);
-        const timeStr = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-        const modeLabel = m.mode === 'solo' ? '⚡ Штурм' : '⚔️ Дуэль';
-        const resultClass = m.is_win ? 'match-win' : 'match-loss';
-        const resultText = m.is_win ? 'Победа' : 'Поражение';
-
-        return `
-          <div class="match-history-item ${resultClass}">
-            <div class="match-mode">${modeLabel}</div>
-            <div class="match-score-display">${m.score}</div>
-            <div class="match-result-text">${resultText}</div>
-            <div class="match-time">${timeStr}</div>
-          </div>
-        `;
-      }).join('');
+  function showUserProfile(username) {
+    socket.emit('get-user', { username }, (result) => {
+      if (!result || !result.ok) { showToast('Игрок не найден', 'error'); return; }
+      const user    = result.user;
+      const rank    = getRank(user.glicko_rating || 1500);
+      const initial = user.username.charAt(0).toUpperCase();
+      const duelGames = user.duelgames || user.duelGames || 0;
+      const wins    = user.wins   || 0;
+      const losses  = user.losses || 0;
+      const winRate = duelGames > 0 ? Math.round((wins/duelGames)*100) : 0;
+      const rating  = Math.round(user.glicko_rating || 1500);
+      const ratingHistory = user.ratingHistory || [];
+      document.getElementById('player-profile-popup')?.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'player-profile-popup';
+      overlay.className = 'player-profile-overlay';
+      overlay.innerHTML = `<div class="player-profile-card">
+        <button class="ppc-close" id="ppc-close">✕</button>
+        <div class="ppc-hero">
+          <div class="ppc-avatar">${initial}</div>
+          <div class="ppc-username">${user.username} ${rank.icon}</div>
+          <div class="ppc-rank-title">${rank.title}</div>
+        </div>
+        <div class="ppc-stats">
+          <div class="ppc-stat-item"><div class="ppc-stat-val">${rating}</div><div class="ppc-stat-label">Рейтинг</div></div>
+          <div class="ppc-stat-item"><div class="ppc-stat-val">${wins}</div><div class="ppc-stat-label">Победы</div></div>
+          <div class="ppc-stat-item"><div class="ppc-stat-val">${winRate}%</div><div class="ppc-stat-label">Винрейт</div></div>
+        </div>
+        <div class="ppc-history">
+          <div class="ppc-history-title">📈 История рейтинга</div>
+          <div class="ppc-rating-chart-wrap">${buildSparklineSVG(ratingHistory, 400, 80)}</div>
+          <div class="ppc-history-title">📜 Последние матчи</div>
+          <div class="ppc-match-list" id="ppc-match-list"><div style="color:var(--text-muted);padding:8px">Загрузка...</div></div>
+        </div>
+        <div class="ppc-actions">
+          <button class="btn btn-primary" style="flex:1" id="ppc-challenge">⚔️ Вызвать</button>
+          <button class="btn btn-ghost" id="ppc-close2">Закрыть</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      socket.emit('get-match-history', { username, limit: 5 }, (res) => {
+        const listEl = document.getElementById('ppc-match-list');
+        if (!listEl) return;
+        const ms = (res && res.ok) ? res.matches : [];
+        if (!ms.length) { listEl.innerHTML = '<div style="color:var(--text-muted);padding:8px">Нет матчей</div>'; return; }
+        const ml = { easy:'Лёгкий', medium:'Средний', hard:'Сложный', algebra:'Алгебра',
+          geometry:'Геометрия', logic:'Логика', blitz:'Блиц', hardcore:'Хардкор' };
+        listEl.innerHTML = ms.map(m => {
+          const solo = String(m.mode).startsWith('solo_');
+          const mk = solo ? m.mode.replace('solo_','') : (m.mode||'easy');
+          const lab = solo ? '⚡ Штурм · '+(ml[mk]||mk) : '⚔️ Дуэль · '+(ml[mk]||mk);
+          const rc = solo ? 'solo' : (m.is_win ? 'win' : 'loss');
+          const rt = solo ? 'Штурм' : (m.is_win ? 'Win' : 'Loss');
+          return `<div class="ppc-match-item"><span class="ppc-match-result ${rc}">${rt}</span><span class="ppc-match-mode">${lab}</span><span class="ppc-match-score">${m.score}</span></div>`;
+        }).join('');
+      });
+      const close = () => overlay.remove();
+      overlay.querySelector('#ppc-close').addEventListener('click', close);
+      overlay.querySelector('#ppc-close2').addEventListener('click', close);
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+      overlay.querySelector('#ppc-challenge').addEventListener('click', () => {
+        close(); renderDuelSetup(); navigateTo('duel-setup');
+        showToast(`Создайте комнату и передайте код игроку ${user.username}`, 'info');
+      });
     });
   }
+
 
   // ──── Duel Setup (with mode selection like Штурм) ────
   function renderDuelSetup() {
@@ -3607,7 +2840,7 @@ console.log('--- APP.JS LOADED ---');
       { id: 'hard', icon: '💀', name: 'Сложный', desc: '+, −, ×, ÷ (1–30)' },
       { id: 'algebra', icon: '🧮', name: 'Алгебра', desc: 'Уравнения x + a = b' },
       { id: 'geometry', icon: '📐', name: 'Геометрия', desc: 'Площадь и периметр фигур' },
-      { id: 'logic', icon: '🧩', name: 'Логика', desc: 'Рыцари и лжецы, взвешивания, разрезания' },
+      { id: 'logic', icon: '🧩', name: 'Логика', desc: 'Числовые последовательности' },
       { id: 'blitz', icon: '⚡', name: 'Блиц', desc: 'Лёгкие задачи, 60 секунд' },
       { id: 'hardcore', icon: '💀', name: 'Хардкор', desc: 'Сложные задачи, 120 секунд' },
     ];
@@ -3636,7 +2869,7 @@ console.log('--- APP.JS LOADED ---');
         </div>
 
         <div class="time-selection" style="margin-bottom:32px">
-          <label style="display:block;margin-bottom: var(--spacing-md);font-weight:600;color:var(--text-secondary)">Время игры (секунд):</label>
+          <label style="display:block;margin-bottom:12px;font-weight:600;color:var(--text-secondary)">Время игры (секунд):</label>
           <div style="display:flex;gap:12px;justify-content:center">
             ${times.map(t => `
               <button class="time-btn ${t === (state.duration || 60) ? 'selected' : ''}" data-time="${t}">${t}</button>
@@ -3761,23 +2994,23 @@ console.log('--- APP.JS LOADED ---');
     const diffNames = { easy: '🌱 Лёгкий', medium: '🔥 Средний', hard: '💀 Сложный', algebra: '🧮 Алгебра', geometry: '📐 Геометрия' };
 
     el.innerHTML = `
-      <div class="lobby-container">
-        <div class="lobby-main">
-          <h1 style="margin-bottom: var(--spacing-xs);">🏠 Комната: <span class="gradient-text">${roomCode}</span></h1>
-          <p style="color:var(--text-secondary); margin-bottom: var(--spacing-lg);">Режим: ${diffNames[difficulty] || difficulty}</p>
+      <div class="lobby-container" style="max-width:1100px; margin:0 auto; padding:40px 24px; display:flex; gap:32px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:320px;">
+          <h1 style="margin-bottom:8px">🏠 Комната: <span class="gradient-text">${roomCode}</span></h1>
+          <p style="color:var(--text-secondary); margin-bottom:24px">Режим: ${diffNames[difficulty] || difficulty}</p>
           
-          <div class="lobby-players-list">
-            <h3 style="font-size:1.1rem; color:var(--text-secondary); margin-bottom: var(--spacing-xs);">Участники (${players.length})</h3>
+          <div class="lobby-players-list" style="display:grid; gap:12px; margin-bottom:32px">
+            <h3 style="font-size:1.1rem; color:var(--text-secondary); margin-bottom:8px">Участники (${players.length})</h3>
             ${players.map(p => `
-              <div class="user-list-item">
-                ${renderUserAvatar(p, 'sm')}
+              <div class="user-list-item" style="background:rgba(255,255,255,0.05); padding:12px 16px; border-radius:12px; display:flex; align-items:center; gap:12px">
+                <div class="user-avatar" style="width:32px; height:32px; font-size:14px">${p.name.charAt(0).toUpperCase()}</div>
                 <span style="font-weight:600">${p.name}</span>
                 ${p.name === state.myName ? '<span style="font-size:0.7rem; background:var(--accent-purple); padding:2px 8px; border-radius:10px">ВЫ</span>' : ''}
               </div>
             `).join('')}
           </div>
 
-          <div class="l-flex" style="flex-wrap:wrap">
+          <div style="display:flex; gap:12px; flex-wrap:wrap">
             ${players[0]?.name === state.myName ? `
               <button class="btn btn-primary btn-lg" id="lobby-start-btn">🚀 Начать игру</button>
             ` : `
@@ -3790,8 +3023,8 @@ console.log('--- APP.JS LOADED ---');
           </div>
         </div>
 
-        <div class="lobby-sidebar">
-          <h3 style="margin-bottom: var(--spacing-md);">💬 Чат комнаты</h3>
+        <div style="width:100%; max-width:400px; min-width:300px;">
+          <h3 style="margin-bottom:12px">💬 Чат комнаты</h3>
           <div class="chat-container">
             <div class="chat-messages" id="chat-messages">
                ${chat.map(m => `
@@ -3841,19 +3074,43 @@ console.log('--- APP.JS LOADED ---');
     input.value = '';
   }
 
-  // (Legacy solo-over - removed in favor of game-over with guard)
+  socket.on("solo-over", (data) => {
+    state.isRunning = false;
+    showToast(`🏁 Время вышло! Решено: ${data.score}`, 'success');
+    playSound('win');
+    
+    const diffName = difficultyNames[state.difficulty] || state.difficulty;
+    const el = $('#screen-solo-arena');
+    el.innerHTML = `
+      <div class="results-container">
+        <div class="results-trophy">🏁</div>
+        <div class="results-title">Результат: ${data.score}</div>
+        <div class="results-subtitle">Режим «${diffName}» завершён</div>
+        <div style="margin-top:32px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap">
+           <button class="btn btn-primary btn-lg" id="solo-retry-btn">🔄 Ещё раз</button>
+           <button class="btn btn-secondary btn-lg" id="solo-change-btn">⚙️ Другой режим</button>
+           <button class="btn btn-ghost" id="solo-home-btn">🏠 Домой</button>
+        </div>
+      </div>
+    `;
+    $('#solo-retry-btn').addEventListener('click', () => startSoloMode(state.difficulty));
+    $('#solo-change-btn').addEventListener('click', () => {
+      renderSoloSetup(state.difficulty);
+      navigateTo('solo-setup');
+    });
+    $('#solo-home-btn').addEventListener('click', () => navigateTo('home'));
+  });
 
   // ──── Marathon Mode (Sudden Death) ────
   function renderMarathon() {
-    const el = $('#screen-marathon'); 
+    const el = $('#screen-practice'); // Reuse practice screen container
     if (!el) return;
     
     state.marathon.active = true;
     state.marathon.streak = 0;
     state.marathon.history = [];
-    state.marathon.usedQuestions = new Set(); // Reset dedupe history on new run
     
-    navigateTo('marathon');
+    // Hide navbar for focus
     document.body.classList.add('in-game');
     
     nextMarathonProblem();
@@ -3861,77 +3118,45 @@ console.log('--- APP.JS LOADED ---');
 
   function nextMarathonProblem() {
     const bank = getPracticeBank();
-    // Use FULL bank for variety, not just logic
+    let taskGen = bank[randomInt(0, bank.length - 1)];
+    // Marathon is Hard/Olympiad by default
     const level = state.marathon.streak > 5 ? 'olympiad' : (state.marathon.streak > 2 ? 'hard' : 'medium');
-    
-    // Initialise history if missing
-    if (!state.marathon.usedQuestions) state.marathon.usedQuestions = new Set();
-    
-    let task;
-    let attempts = 0;
-    do {
-      const taskGen = bank[randomInt(0, bank.length - 1)];
-      task = taskGen.gen(level);
-      attempts++;
-      // Avoid repeating until we've cycled through 80% of unique questions or 20 attempts
-    } while (
-      state.marathon.usedQuestions.has(task.question) &&
-      attempts < 20
-    );
-    
-    state.marathon.usedQuestions.add(task.question);
-    // Reset history after 40 unique tasks to allow re-use in long runs
-    if (state.marathon.usedQuestions.size > 40) state.marathon.usedQuestions.clear();
-    
-    // Generate 4 answer options for ALL task types
-    task.options = generateMarathonOptions(task.correct);
+    let task = taskGen.gen(level);
     
     state.marathon.currentTask = task;
-    state.marathon.userCuts = new Set();
+    
+    // Generate 4 options for marathon
+    const options = generateMarathonOptions(parseInt(task.correct) || 0);
 
-    const el = $('#screen-marathon');
+    const el = $('#screen-practice');
     el.innerHTML = `
       <div class="theory-container" style="text-align:center; padding-top:60px">
-        <div class="marathon-header-stats">
-          <div class="marathon-streak-medal">🏆</div>
-          <div class="marathon-streak-text">МАРАФОН • Счёт: ${state.marathon.streak}</div>
+        <div style="font-size:1.2rem; color:var(--accent-purple); font-weight:700; margin-bottom:20px">
+          🏆 МАРАФОН • Счёт: ${state.marathon.streak}
         </div>
-        
-        <div class="theory-topic-card marathon-problem-card">
-          <div class="marathon-question">${autoMathWrap(task.question)}</div>
+        <div class="theory-topic-card" style="max-width:600px; margin:0 auto; padding:40px">
+          <h2 style="font-size:2.5rem; margin-bottom:24px">${autoMathWrap(task.question)}</h2>
+          ${task.draw ? `<div style="margin-bottom:24px">${getGeometricShapeSvg(task)}</div>` : ''}
           
-          <div id="marathon-content-area" class="marathon-content-area">
-             <!-- Dynamic content here -->
+          <div class="marathon-grid">
+            ${options.map(opt => `
+              <button class="btn btn-secondary marathon-opt-btn" style="padding:20px; font-size:1.4rem" data-val="${opt}">
+                ${opt}
+              </button>
+            `).join('')}
           </div>
           
-          <div id="marathon-controls" class="marathon-controls">
-             <!-- Buttons or Submit -->
-          </div>
-
-          <button class="btn btn-ghost marathon-quit-btn" id="marathon-quit-btn">✕ Завершить попытку</button>
+          <button class="btn btn-ghost" style="margin-top:32px" id="marathon-quit-btn">Сдаться</button>
         </div>
       </div>
     `;
 
-    const contentArea = $('#marathon-content-area');
-    const controls = $('#marathon-controls');
-
-    if (task.type === 'dissection') {
-      renderDissectionInterface(contentArea, controls, task);
-    } else {
-      // Standard Multiple Choice
-      const options = generateMarathonOptions(task.correct);
-      contentArea.innerHTML = `
-        <div class="marathon-grid">
-          ${options.map(opt => `
-            <button class="btn btn-secondary marathon-opt-btn" data-val="${opt}">${opt}</button>
-          `).join('')}
-        </div>
-      `;
-      $$('.marathon-opt-btn').forEach(btn => {
-        btn.addEventListener('click', () => checkMarathonAnswer(btn.dataset.val));
+    $$('.marathon-opt-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.dataset.val;
+        checkMarathonAnswer(val);
       });
-    }
+    });
 
     $('#marathon-quit-btn').addEventListener('click', () => {
       state.marathon.active = false;
@@ -3940,101 +3165,25 @@ console.log('--- APP.JS LOADED ---');
     });
   }
 
-  function renderDissectionInterface(container, controls, task) {
-    const size = 300;
-    const cellSize = size / task.gridSize;
-    
-    let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="dissection-svg">`;
-    
-    // Draw cells
-    task.shape.forEach(([cx, cy]) => {
-      svg += `<rect x="${cx * cellSize}" y="${cy * cellSize}" width="${cellSize}" height="${cellSize}" class="dissection-cell" />`;
-    });
-
-    // Draw interactive edges
-    for (let i = 0; i <= task.gridSize; i++) {
-      for (let j = 0; j <= task.gridSize; j++) {
-        // Horizontal edges
-        if (j < task.gridSize) {
-           svg += `<line x1="${i*cellSize}" y1="${j*cellSize}" x2="${i*cellSize}" y2="${(j+1)*cellSize}" 
-                   class="dissection-edge edge-v" data-edge="v-${i}-${j}" />`;
-        }
-        // Vertical edges
-        if (i < task.gridSize) {
-           svg += `<line x1="${i*cellSize}" y1="${j*cellSize}" x2="${(i+1)*cellSize}" y2="${j*cellSize}" 
-                   class="dissection-edge edge-h" data-edge="h-${i}-${j}" />`;
-        }
-      }
-    }
-    
-    svg += `</svg>`;
-    container.innerHTML = svg;
-
-    controls.innerHTML = `<button class="btn btn-primary btn-lg" id="dissection-submit-btn">Проверить разрез</button>`;
-
-    $$('.dissection-edge', container).forEach(el => {
-      el.addEventListener('click', () => {
-        const id = el.dataset.edge;
-        if (state.marathon.userCuts.has(id)) {
-          state.marathon.userCuts.delete(id);
-          el.classList.remove('active');
-        } else {
-          state.marathon.userCuts.add(id);
-          el.classList.add('active');
-        }
-      });
-    });
-
-    $('#dissection-submit-btn').addEventListener('click', () => {
-      verifyDissectionSolution(task);
-    });
-  }
-
-  function verifyDissectionSolution(task) {
-    // In a real implementation, we would use Union-Find on cells with cut barriers.
-    // For now, let's assume if they made any cuts, we give them credit if it's "close".
-    // Better logic: placeholder for shape equality check.
-    if (state.marathon.userCuts.size > 0) {
-       checkMarathonAnswer('interactive-success');
-    } else {
-       showToast('Сначала сделайте хотя бы один разрез!', 'info');
-    }
-  }
-
   function generateMarathonOptions(correct) {
-    if (isNaN(Number(correct))) return [correct, "Неизвестно", "0", "Бесконечно"];
     const opts = new Set([correct]);
     while (opts.size < 4) {
       const dev = randomInt(1, 10);
-      opts.add(String(Math.random() > 0.5 ? Number(correct) + dev : Number(correct) - dev));
+      opts.add(Math.random() > 0.5 ? correct + dev : correct - dev);
     }
-    return shuffle([...opts]);
+    return [...opts].sort((a,b) => a-b);
   }
 
   function checkMarathonAnswer(ans) {
     const correct = state.marathon.currentTask.correct;
-    const isCorrect = ans === 'interactive-success' || String(ans) === String(correct);
-    
-    if (isCorrect) {
+    if (String(ans) === String(correct)) {
       state.marathon.streak++;
       playSound('correct');
-      showToast('Великолепно! Идем дальше 🔥', 'success');
-      
-      const el = $('.marathon-problem-card');
-      if (el) {
-        el.style.transform = 'scale(1.02)';
-        el.style.boxShadow = '0 0 40px rgba(74, 222, 128, 0.3)';
-        setTimeout(() => {
-          el.style.transform = '';
-          el.style.boxShadow = '';
-          nextMarathonProblem();
-        }, 600);
-      } else {
-        nextMarathonProblem();
-      }
+      showToast('Верно! 🔥', 'success');
+      nextMarathonProblem();
     } else {
       playSound('wrong');
-      showToast('Неверно! Попробуйте в следующий раз.', 'error');
+      showToast('Ошибка! Игра окончена.', 'error');
       renderMarathonResults();
     }
   }
@@ -4049,7 +3198,7 @@ console.log('--- APP.JS LOADED ---');
       localStorage.setItem('sciduel_best_marathon', state.marathon.streak);
     }
 
-    const el = $('#screen-marathon');
+    const el = $('#screen-practice');
     el.innerHTML = `
       <div class="theory-container" style="text-align:center; padding-top:80px">
         <h1>🏁 Марафон окончен!</h1>
@@ -4174,7 +3323,6 @@ console.log('--- APP.JS LOADED ---');
       <div class="duel-arena">
         <div class="duel-header">
           <div class="duel-score-left">
-            ${renderUserAvatar(state.currentUser, 'sm')}
             <span class="arena-player-label you-label">Вы: ${state.myName}</span>
             <span class="arena-score my-score" id="my-score-display">0</span>
           </div>
@@ -4184,7 +3332,6 @@ console.log('--- APP.JS LOADED ---');
             <div class="timer-bar-container"><div class="timer-bar" id="timer-bar"></div></div>
           </div>
           <div class="duel-score-right">
-            ${renderUserAvatar({username: state.opponentName}, 'sm')}
             <span class="arena-player-label opp-label">${state.opponentName}</span>
             <span class="arena-score opp-score" id="opp-score-display">0</span>
           </div>
@@ -4258,10 +3405,9 @@ console.log('--- APP.JS LOADED ---');
 
     const iAmP1 = state.myPlayerSlot === 1;
     const myData = iAmP1 ? p1 : p2;
-    // ДОБАВЛЕНО: Защитная проверка. Если данные о сопернике пропали (например, он вышел из сети до финала), мы подменяем их объектом-«заглушкой», чтобы не падал интерфейс.
-    const oppData = (iAmP1 ? p2 : p1) || { name: 'Неизвестный', score: 0, ratingDelta: 0, rating: 1500 };
+    const oppData = iAmP1 ? p2 : p1;
 
-    // Теперь чтение свойства .rating полностью безопасно
+    // Safely resolve rating: use the data from server, or fall back to user state
     const myRating = myData.rating || (state.currentUser ? state.currentUser.glicko_rating : 1500) || 1500;
     const oppRating = oppData.rating || 1500;
 
@@ -4286,7 +3432,7 @@ console.log('--- APP.JS LOADED ---');
     const oppRank = getRank(oppRating);
 
     el.innerHTML = `
-      <div class="results-container results-animate">
+      <div class="results-container">
         <div class="results-trophy">${trophy}</div>
         <div class="results-title">${title}</div>
         <div class="results-subtitle">${subtitle}</div>
@@ -4304,7 +3450,6 @@ console.log('--- APP.JS LOADED ---');
               ` : ''}
             </div>
             <div class="result-label">правильных ответов</div>
-            ${data.xpGain ? `<div style="color:var(--accent-green); font-weight:700; margin-top:10px">+${data.xpGain} XP</div>` : ''}
             ${data.isRanked ? `<div class="res-total-rating">Рейтинг: ${Math.round(myRating + (myData.ratingDelta || 0))}</div>` : ''}
             ${myData.score > oppData.score ? '<div class="result-badge">🏆 Победитель</div>' : ''}
           </div>
@@ -4320,7 +3465,6 @@ console.log('--- APP.JS LOADED ---');
               ` : ''}
             </div>
             <div class="result-label">правильных ответов</div>
-            ${oppData.xpGain ? `<div style="color:var(--accent-green); font-weight:700; margin-top:10px">+${oppData.xpGain} XP</div>` : ''}
             ${data.isRanked ? `<div class="res-total-rating">Рейтинг: ${Math.round(oppRating + (oppData.ratingDelta || 0))}</div>` : ''}
             ${oppData.score > myData.score ? '<div class="result-badge">🏆 Победитель</div>' : ''}
           </div>
@@ -4349,6 +3493,61 @@ console.log('--- APP.JS LOADED ---');
       state.roomCode = null;
       navigateTo('home');
     });
+
+    // Award / Confetti effect
+    if (myData && oppData && myData.score > oppData.score) {
+      setTimeout(() => {
+        triggerVictoryEffect();
+      }, 500);
+    }
+  }
+
+  function triggerVictoryEffect() {
+    if (typeof confetti === 'undefined') return;
+    
+    const duration = 3 * 1000;
+    const end = Date.now() + duration;
+
+    (function frame() {
+      confetti({
+        particleCount: 3,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors: ['#4f46e5', '#38bdf8', '#818cf8']
+      });
+      confetti({
+        particleCount: 3,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors: ['#4f46e5', '#38bdf8', '#818cf8']
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    }());
+
+    // Show a small overlay modal for the winner
+    const initial = state.myName.charAt(0).toUpperCase();
+    const rank = getRank(state.currentUser ? state.currentUser.glicko_rating : 1500);
+    
+    const winModal = document.createElement('div');
+    winModal.className = 'victory-popup-overlay';
+    winModal.innerHTML = `
+      <div class="victory-popup-card">
+        <div class="vic-close" onclick="this.parentElement.parentElement.remove()">×</div>
+        <div class="vic-crown">🏆</div>
+        <h3>ПОБЕДА!</h3>
+        <div class="vic-user-avatar ${rank.class}">${initial}</div>
+        <div class="vic-username">${state.myName}</div>
+        <div class="vic-rank-text">${rank.icon} ${rank.title}</div>
+        <div class="vic-glory">Ваши научные достижения впечатляют!</div>
+        <button class="btn btn-primary" onclick="this.parentElement.parentElement.remove()">Продолжить</button>
+      </div>
+    `;
+    document.body.appendChild(winModal);
   }
 
   // ──── Solo Results ────
@@ -4364,35 +3563,29 @@ console.log('--- APP.JS LOADED ---');
     el.innerHTML = `
       <div class="results-container">
         <div class="results-trophy">🏁</div>
-        <h1 class="results-title">Ваш рекорд</h1>
-        <p class="results-subtitle" style="color:var(--text-secondary); margin-bottom: var(--spacing-xl)">Режим: «${diffName}»</p>
+        <div class="results-title">Ваш результат и рекорд</div>
+        <div class="results-subtitle">Режим «${diffName}»</div>
 
-        <div style="display:flex; justify-content:center; margin-bottom: var(--spacing-lg)">
-           ${renderUserAvatar(state.currentUser, 'lg')}
-        </div>
-
-        <div class="solo-results-panel" style="background:var(--bg-glass); border-radius:var(--radius-lg); padding: var(--spacing-xl); margin-bottom: var(--spacing-xl)">
-          <div class="solo-results-score" style="text-align:center">
-            <div class="solo-score-big" style="font-size: 4rem; font-weight: 800; color: var(--color-accent-blue)">${score}</div>
+        <div class="solo-results-panel">
+          <div class="solo-results-score">
+            <div class="solo-score-big">${score}</div>
             <div class="solo-score-label">решено задач</div>
-            ${data.player1.xpGain ? `<div style="color:var(--color-success); font-weight:700; margin-top:8px">+${data.player1.xpGain} XP получено!</div>` : ''}
           </div>
-          
-          <div style="display:flex; justify-content:center; gap: var(--spacing-xl); margin-top: var(--spacing-lg); border-top: 1px solid var(--border-glass); padding-top: var(--spacing-md)">
-            <div>
-              <div style="color:var(--text-secondary); font-size: 0.8rem">Личный рекорд</div>
-              <div style="font-size: 1.5rem; font-weight: 700">${Math.max(score, bestSolo)}</div>
+          <div class="solo-results-stats">
+            <div class="solo-stat-row">
+              <span>Личный рекорд:</span>
+              <span class="solo-stat-value">${Math.max(score, bestSolo)}</span>
             </div>
-            <div>
-              <div style="color:var(--text-secondary); font-size: 0.8rem">Предыдущий</div>
-              <div style="font-size: 1.5rem; font-weight: 700; opacity: 0.6">${bestSolo}</div>
+            <div class="solo-stat-row">
+              <span>Предыдущий рекорд:</span>
+              <span class="solo-stat-value">${bestSolo}</span>
             </div>
           </div>
         </div>
 
         <div class="results-actions">
           <button class="btn btn-primary btn-lg" id="solo-retry-btn">🔄 Ещё раз</button>
-          <button class="btn btn-secondary btn-lg" id="solo-change-btn">🚪 В лобби</button>
+          <button class="btn btn-secondary btn-lg" id="solo-change-btn">⚙️ Другой режим</button>
           <button class="btn btn-ghost" id="solo-home-btn">🏠 Домой</button>
         </div>
       </div>
@@ -4400,7 +3593,8 @@ console.log('--- APP.JS LOADED ---');
 
     $('#solo-retry-btn').addEventListener('click', () => startSoloMode(state.difficulty));
     $('#solo-change-btn').addEventListener('click', () => {
-      navigateTo('home');
+      renderSoloSetup(state.difficulty);
+      navigateTo('solo-setup');
     });
     $('#solo-home-btn').addEventListener('click', () => navigateTo('home'));
   }
@@ -4497,21 +3691,20 @@ console.log('--- APP.JS LOADED ---');
   // Timer update
   socket.on('timer-update', (data) => {
     state.timeLeft = data.timeLeft;
-    // Find the timer in the currently active screen to be safe
-    const activeScreen = $('.screen.active');
-    const timerValueEl = $('#timer-display', activeScreen);
-    if (timerValueEl) {
-      timerValueEl.textContent = formatTime(data.timeLeft);
-      if (data.timeLeft <= 10) {
-        timerValueEl.classList.add('warning');
+    const timerEl = $('#timer-display');
+    if (timerEl) {
+      timerEl.textContent = formatTime(data.timeLeft);
+      if (data.timeLeft <= 30) {
+        timerEl.classList.add('warning');
       }
     }
     // Update timer progress bar
-    const barEl = $('#timer-bar', activeScreen);
+    const barEl = $('#timer-bar');
     if (barEl && state.timeTotal > 0) {
       const pct = (data.timeLeft / state.timeTotal) * 100;
       barEl.style.width = pct + '%';
-      if (pct <= 20) barEl.classList.add('critical');
+      if (pct <= 25) barEl.classList.add('critical');
+      else if (pct <= 50) barEl.classList.add('low');
     }
   });
 
@@ -4599,15 +3792,6 @@ console.log('--- APP.JS LOADED ---');
 
   // Game over
   socket.on('game-over', (data) => {
-    // If the client has already noted the game is not running (e.g. manually exited)
-    // or if the user is no longer on the game arena screen (another exit method)
-    // we should not show the results screen.
-    if (!state.isRunning) return; 
-    
-    // Safety check: only show results if we are on one of the game screens
-    const gameScreens = ['duel-arena', 'solo-arena', 'marathon'];
-    if (!gameScreens.includes(state.currentScreen)) return;
-
     state.isRunning = false;
     state.isSolo = !!data.isSolo;
     navigateTo('results');
@@ -4631,37 +3815,6 @@ console.log('--- APP.JS LOADED ---');
       rematchBtn.onclick = () => {
         socket.emit('accept-rematch');
       };
-    }
-  });
-
-  // Community real-time updates
-  socket.on('new-community-task', (task) => {
-    if ($('#screen-community').classList.contains('active')) {
-      showToast(`Новая задача: ${task.title} 📝`, 'info');
-      // Potential auto-refresh if at the top
-    }
-  });
-
-  socket.on('new-community-comment', (data) => {
-    const chatScroll = $('#task-chat-messages');
-    if (chatScroll) {
-      const msg = data.comment;
-      const html = `
-        <div class="chat-msg ${msg.author === state.myName ? 'chat-msg-self' : 'chat-msg-other'}">
-          <span class="chat-name">${msg.author}</span>
-          ${autoMathWrap(msg.text)}
-        </div>
-      `;
-      chatScroll.insertAdjacentHTML('beforeend', html);
-      chatScroll.scrollTop = chatScroll.scrollHeight;
-    }
-  });
-
-  socket.on('community-task-updated', (data) => {
-    const card = $(`.community-card[data-id="${data.taskId}"]`);
-    if (card) {
-      const commSpan = $('.comm-comments', card);
-      if (commSpan) commSpan.textContent = `💬 ${data.commentCount}`;
     }
   });
 
@@ -4786,7 +3939,7 @@ console.log('--- APP.JS LOADED ---');
       { id: 'hard', icon: '💀', name: 'Сложный', desc: '+, −, ×, ÷ (1–30)' },
       { id: 'algebra', icon: '🧮', name: 'Алгебра', desc: 'Уравнения x + a = b' },
       { id: 'geometry', icon: '📐', name: 'Геометрия', desc: 'Площадь и периметр фигур' },
-      { id: 'logic', icon: '🧩', name: 'Логика', desc: 'Рыцари и лжецы, взвешивания, разрезания' },
+      { id: 'logic', icon: '🧩', name: 'Логика', desc: 'Числовые последовательности' },
       { id: 'blitz', icon: '⚡', name: 'Блиц', desc: 'Лёгкие задачи, 60 секунд' },
       { id: 'hardcore', icon: '💀', name: 'Хардкор', desc: 'Сложные задачи, 120 секунд' },
     ];
@@ -4833,7 +3986,6 @@ console.log('--- APP.JS LOADED ---');
   }
 
   function startSoloMode(difficulty) {
-    console.log(` [Solo] Starting solo mode with difficulty: ${difficulty}`);
     if (!state.currentUser && difficulty !== 'blitz') {
       showToast('Войдите в аккаунт для сохранения результата!', 'info');
     }
@@ -4865,103 +4017,6 @@ console.log('--- APP.JS LOADED ---');
     showToast(`⚡ Режим «${difficultyNames[state.difficulty] || state.difficulty}» начался`, 'info');
   });
 
-  function renderDailyChallenge() {
-    const container = $('#daily-challenge-container');
-    if (!container) return;
-    
-    // Skeleton loader
-    container.innerHTML = `
-      <div class="daily-challenge-card skeleton" style="min-height:200px; border:none"></div>
-    `;
-
-    socket.emit('get-daily-challenge', {}, (res) => {
-      if (!res || !res.ok) {
-        container.innerHTML = '';
-        return;
-      }
-
-      const { challenge, solved } = res;
-      container.innerHTML = `
-        <div class="daily-challenge-card">
-          <div class="daily-tag">ЗАДАЧА ДНЯ</div>
-          <h2 style="margin-bottom:12px">⚛️ Ежедневное испытание</h2>
-          <p style="color:var(--text-secondary); margin-bottom:24px">
-            ${solved ? 'Вы успешно решили сегодняшнюю задачу. Возвращайтесь завтра!' : 'Решите эту задачу первым, чтобы получить бонус к рейтингу!'}
-          </p>
-          
-          <div class="challenge-box" style="background:rgba(0,0,0,0.2); padding:24px; border-radius:var(--radius-lg); margin-bottom:24px">
-            <div class="challenge-question" style="font-size:1.5rem; font-weight:700; margin-bottom:20px; font-family:var(--font-mono)">
-              ${autoMathWrap(challenge.question)}
-            </div>
-            
-            ${!solved ? `
-              <div class="challenge-options" style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
-                ${challenge.options.map(opt => `
-                  <button class="btn btn-secondary daily-opt-btn" data-value="${opt}">${opt}</button>
-                `).join('')}
-              </div>
-            ` : `
-              <div class="solved-badge" style="color:var(--accent-green); font-weight:700; font-size:1.1rem">
-                ✅ РЕШЕНО
-              </div>
-            `}
-          </div>
-          
-          <div class="challenge-footer" style="font-size:0.85rem; color:var(--text-secondary)">
-            Обновление через: <span id="daily-timer">--:--:--</span>
-          </div>
-        </div>
-      `;
-
-      // Option clicks
-      const btns = $$('.daily-opt-btn', container);
-      btns.forEach(btn => {
-        btn.onclick = () => {
-          const answer = btn.dataset.value;
-          socket.emit('submit-daily-answer', { answer }, (response) => {
-            if (response.ok) {
-              if (response.correct) {
-                showToast('Верно! Засчитано! 🎉', 'success');
-                renderDailyChallenge(); // Refresh
-                playSound('correct');
-              } else {
-                showToast('К сожалению, это неверно. Попробуйте еще раз завтра!', 'error');
-                btn.classList.add('wrong');
-                btn.disabled = true;
-                playSound('wrong');
-              }
-            }
-          });
-        };
-      });
-
-      // Daily Timer update
-      const timerEl = $('#daily-timer', container);
-      const updateDailyTimer = () => {
-        const now = new Date();
-        const tomorrow = new Date();
-        tomorrow.setHours(24, 0, 0, 0);
-        const diff = tomorrow - now;
-        
-        const h = Math.floor(diff / 3600000);
-        const m = Math.floor((diff % 3600000) / 60000);
-        const s = Math.floor((diff % 60000) / 1000);
-        
-        if (timerEl) {
-          timerEl.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-        }
-      };
-      updateDailyTimer();
-      const dailyInt = setInterval(() => {
-        if (!document.body.contains(timerEl)) {
-          clearInterval(dailyInt);
-          return;
-        }
-        updateDailyTimer();
-      }, 1000);
-    });
-  }
-
   function renderSoloArena() {
     const el = $('#screen-solo-arena');
     const diffName = difficultyNames[state.difficulty] || state.difficulty;
@@ -4989,18 +4044,16 @@ console.log('--- APP.JS LOADED ---');
           <div class="problem-expression" id="problem-display">⏳ Готовим задачи...</div>
         </div>
 
-        <div class="answer-options-grid-solo" id="answer-options"></div>
-        <div class="player-feedback-solo" id="my-feedback"></div>
+        <div class="answer-options-grid" id="answer-options"></div>
+        <div class="player-feedback" id="my-feedback"></div>
+
         <div style="margin-top:40px; text-align:center">
           <button class="btn btn-ghost" id="solo-cancel-btn">✕ Прервать игру</button>
         </div>
       </div>
     `;
-
-    addSafeListener('#solo-cancel-btn', 'click', () => {
-      // Set isRunning to false to block any incoming game-over/solo-over from showing results
+    $('#solo-cancel-btn').addEventListener('click', () => {
       state.isRunning = false;
-      state.isSolo = false;
       socket.emit('cancel-solo');
       navigateTo('home');
       showToast('Игра отменена', 'info');
@@ -5067,15 +4120,7 @@ console.log('--- APP.JS LOADED ---');
     initParticles();
     initQuotes();
     navigateTo('home');
-    renderDailyChallenge();
     updateNavHeightVar();
-    
-    socket.emit('get-activity-feed', {}, (res) => {
-      if (res && res.ok) {
-        state.activityFeed = res.feed;
-        renderActivityFeed();
-      }
-    });
     window.addEventListener('resize', updateNavHeightVar);
 
     let lastScrollY = window.scrollY;
@@ -5101,37 +4146,7 @@ console.log('--- APP.JS LOADED ---');
       });
     }
 
-    addSafeListener('#nav-logo', 'click', () => navigateTo('home'));
-
-    // ── Navbar buttons ──
-    addSafeListener('#nav-theory-btn', 'click', () => {
-      renderTheory();
-      navigateTo('theory');
-    });
-    addSafeListener('#nav-practice-btn', 'click', () => {
-      renderPracticeMode();
-      navigateTo('practice');
-    });
-    addSafeListener('#nav-bots-btn', 'click', () => {
-      renderBots();
-      navigateTo('bots');
-    });
-    addSafeListener('#nav-community-btn', 'click', () => {
-      renderCommunity();
-      navigateTo('community');
-    });
-    addSafeListener('#nav-rules-btn', 'click', () => {
-      navigateTo('rules');
-    });
-    addSafeListener('#nav-leaderboard-btn', 'click', () => {
-      renderLeaderboard();
-      navigateTo('leaderboard');
-    });
-    addSafeListener('#nav-login-btn', 'click', () => openModal('login'));
-    addSafeListener('#nav-register-btn', 'click', () => openModal('register'));
-    addSafeListener('#nav-settings-btn', 'click', () => initSettings());
-
-    addSafeListener('#hero-duel-btn', 'click', () => {
+    $('#hero-duel-btn').addEventListener('click', () => {
       if (!state.currentUser) {
         showToast('Войдите в аккаунт для создания комнаты', 'error');
         openModal('login');
@@ -5140,7 +4155,7 @@ console.log('--- APP.JS LOADED ---');
       renderDuelSetup();
       navigateTo('duel-setup');
     });
-    addSafeListener('#hero-search-btn', 'click', () => {
+    $('#hero-search-btn').addEventListener('click', () => {
       if (!state.currentUser) {
         showToast('Войдите для поиска соперника', 'error');
         openModal('login');
@@ -5149,14 +4164,14 @@ console.log('--- APP.JS LOADED ---');
       renderMatchmaking();
       navigateTo('matchmaking');
     });
-    addSafeListener('#hero-solo-btn', 'click', () => {
+    $('#hero-solo-btn').addEventListener('click', () => {
       renderSoloSetup('blitz');
       navigateTo('solo-setup');
     });
-    addSafeListener('#hero-marathon-btn', 'click', () => {
+    $('#hero-marathon-btn')?.addEventListener('click', () => {
       renderMarathon();
     });
-    addSafeListener('#hero-practice-btn', 'click', () => {
+    $('#hero-practice-btn')?.addEventListener('click', () => {
       renderPracticeMode();
       navigateTo('practice');
     });
@@ -5169,308 +4184,324 @@ console.log('--- APP.JS LOADED ---');
       });
     });
 
-    addSafeListener('#dev-back-btn', 'click', () => navigateTo('home'));
-    addSafeListener('#rules-back-btn', 'click', () => navigateTo('home'));
-    addSafeListener('#bots-back-btn', 'click', () => navigateTo('home'));
+    $('#dev-back-btn')?.addEventListener('click', () => navigateTo('home'));
+    $('#rules-back-btn')?.addEventListener('click', () => navigateTo('home'));
+    $('#bots-back-btn')?.addEventListener('click', () => navigateTo('home'));
+    $('#nav-theory-btn')?.addEventListener('click', () => { renderTheory(); navigateTo('theory'); });
+    $('#hero-login-btn')?.addEventListener('click', () => openModal('register'));
+    $('.navbar-logo').addEventListener('click', () => navigateTo('home'));
+
+    $$('.quote-dot').forEach((dot, i) => {
+      dot.addEventListener('click', () => {
+        state.quoteIndex = i;
+        renderQuote();
+      });
+    });
+
+    // Tournament back buttons
+    $('#tournaments-back-btn')?.addEventListener('click', () => navigateTo('home'));
+    $('#tlobby-back-btn')?.addEventListener('click', () => { renderTournaments(); navigateTo('tournaments'); });
   }
 
-  // ──── COMMUNITY HUB LOGIC ────
-  let currentCommunityTask = null;
+  // ═══════════════════════════════════════════════════════════
+  // TOURNAMENT MODULE — Olympic System
+  // ═══════════════════════════════════════════════════════════
 
-  window.renderCommunity = function() {
-    console.log(' [Community] Rendering community grid...');
-    const grid = $('#community-grid');
-    if (grid) {
-      grid.innerHTML = Array(6).fill(`
-        <div class="community-task-card skeleton">
-          <div style="height:20px; width:60%; margin-bottom: var(--spacing-md); background:rgba(255,255,255,0.1); border-radius:4px"></div>
-          <div style="height:24px; width:90%; margin-bottom: var(--spacing-md); background:rgba(255,255,255,0.1); border-radius:4px"></div>
-          <div style="height:60px; width:100%; background:rgba(255,255,255,0.05); border-radius:4px"></div>
-        </div>
-      `).join('');
-    } else {
-      console.error(' [Community] Grid element #community-grid NOT FOUND!');
-      return; // Exit if the container is missing
-    }
-    
-    let received = false;
-    const timeout = setTimeout(() => {
-      if (!received) {
-        showToast('Сервер сообщества не отвечает (тайм-аут)', 'error');
-        if (grid) grid.innerHTML = '<p style="text-align:center; grid-column:1/-1;">Сервер не отвечает. Попробуйте обновить страницу или проверьте интернет-соединение.</p>';
-      }
-    }, 8000);
-
-    socket.emit('get-community-tasks', {}, (res) => {
-      received = true;
-      clearTimeout(timeout);
-      if (res && res.ok) {
-        drawCommunityGrid(res.tasks);
-      } else {
-        const msg = res && res.msg ? res.msg : 'Не удалось загрузить задачи сообщества';
-        showToast(msg, 'error');
-        if (grid) grid.innerHTML = `<p style="text-align:center; grid-column:1/-1;">${msg}. Попробуйте обновить страницу.</p>`;
-      }
-    });
-
-    // Delegate the click to ensure the button works even if re-rendered
-    const createBtn = $('#community-create-task-btn');
-    if (createBtn) {
-      createBtn.onclick = () => {
-        if (state.isAuthLoading) {
-          showToast('Подождите, идёт авторизация...', 'info');
-          return;
-        }
-        if (!state.currentUser) {
-          showToast('Только зарегистрированные пользователи могут добавлять задачи.', 'error');
-          // Use window.openModal to get the overridden version that knows 'login'
-          window.openModal('login');
-          return;
-        }
-        // Must call window.openModal — local openModal doesn't handle 'create-community-task'
-        window.openModal('create-community-task');
-      };
-    }
+  let tournamentState = {
+    current: null,       // current tournament object
+    matches: [],
+    players: [],
+    adminCode: null      // set if user opened admin page
   };
 
-  function drawCommunityGrid(tasks) {
-    const grid = $('#community-grid');
-    if (!grid) return;
-    grid.innerHTML = '';
-    
-    if (tasks.length === 0) {
-      grid.innerHTML = '<p style="color:var(--text-muted); text-align:center; grid-column: 1/-1;">Здесь пока нет задач. Вы можете стать первым!</p>';
-      return;
-    }
+  const ROUND_NAMES = { 1: 'Четвертьфинал', 2: 'Полуфинал', 3: 'Финал' };
+  const DIFFICULTY_LABELS = { easy: 'Лёгкий', medium: 'Средний', hard: 'Сложный' };
 
-    tasks.forEach(t => {
-      const card = document.createElement('div');
-      card.className = 'community-task-card';
-      const dateStr = new Date(t.createdAt).toLocaleDateString();
-      
-      card.innerHTML = `
-        <div class="ct-meta">
-          <span class="ct-author">👤 ${t.author || 'Безымянный'}</span>
-          <span class="ct-grade-badge">🎓 ${t.grade}-й класс</span>
-          <span class="ct-date">${dateStr}</span>
-        </div>
-        <h3 class="ct-title">${t.title || 'Задача'}</h3>
-        <p class="ct-desc">${t.content || t.text}</p>
-        <div class="ct-footer">
-          <span class="ct-topic-badge">${t.topic}</span>
-          <span class="ct-comments">💬 ${t.commentCount || 0}</span>
-        </div>
-      `;
-      
-      card.onclick = () => {
-        openCommunityTaskDetails(t.id);
-      };
-      
-      grid.appendChild(card);
-    });
-  }
+  // ── Tournaments List Screen ──────────────────────────────────────────
+  function renderTournaments() {
+    const el = document.getElementById('tournaments-list');
+    if (!el) return;
+    el.innerHTML = '<div class="loading-spinner">Загрузка...</div>';
 
-  window.openCommunityTaskDetails = function(taskId) {
-    socket.emit('get-community-task', taskId, (res) => {
-      if (res && res.ok) {
-        currentCommunityTask = res.task;
-        renderCommunityTaskDetails(res.task);
-        navigateTo('community-task-details');
-        socket.emit('join-community-task', taskId);
-      } else {
-        showToast('Не удалось загрузить задачу', 'error');
-      }
-    });
-  };
-
-  function renderCommunityTaskDetails(task) {
-    $('#community-task-title').textContent = task.title || 'Задача';
-    $('#community-task-author').textContent = `Автор: ${task.author} • ${task.grade}-й класс • ${new Date(task.createdAt).toLocaleString()}`;
-    $('#community-task-text').textContent = task.content || task.text;
-
-    const messagesContainer = $('#community-chat-messages');
-    messagesContainer.innerHTML = '';
-    
-    if (task.comments && task.comments.length > 0) {
-      task.comments.forEach(c => appendCommunityCommentElement(c));
-    }
-    
-    const sendBtn = $('#community-chat-send-btn');
-    const inputField = $('#community-chat-input');
-    
-    const sendComment = () => {
-      if (state.isAuthLoading) {
-        showToast('Загрузка данных пользователя...', 'info');
+    socket.emit('get-tournaments', {}, (res) => {
+      if (!res || !res.ok) {
+        el.innerHTML = '<p style="text-align:center;color:var(--text-muted)">Ошибка загрузки</p>';
         return;
       }
-      const text = inputField.value.trim();
-      if (!text) return;
-      if (!state.currentUser) {
-        showToast('Пожалуйста, войдите в аккаунт, чтобы писать сообщения', 'error');
-        openModal('login');
+      if (!res.tournaments || res.tournaments.length === 0) {
+        el.innerHTML = `
+          <div class="tournament-empty">
+            <div style="font-size:3rem;margin-bottom:12px">🏆</div>
+            <p>Пока нет активных турниров.</p>
+            <p style="color:var(--text-muted);font-size:0.9rem">Турниры создаются администраторами.</p>
+          </div>
+        `;
         return;
       }
-      socket.emit('send-community-comment', { taskId: task.id, text });
-      inputField.value = '';
-    };
+      el.innerHTML = res.tournaments.map(t => {
+        const statusLabel = t.status === 'waiting' ? '⏳ Ожидание' : '⚡ Активен';
+        const statusClass = t.status === 'waiting' ? 'status-waiting' : 'status-active';
+        return `
+          <div class="tournament-card" data-id="${t.id}">
+            <div class="tc-header">
+              <div class="tc-name">${t.name}</div>
+              <span class="tc-status ${statusClass}">${statusLabel}</span>
+            </div>
+            <div class="tc-meta">
+              ⚔️ Олимпийская система &nbsp;·&nbsp;
+              📊 ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} &nbsp;·&nbsp;
+              👥 ${t.playerCount}/${t.max_players}
+            </div>
+            <button class="btn btn-primary tc-join-btn" data-id="${t.id}">Открыть</button>
+          </div>
+        `;
+      }).join('');
 
-    sendBtn.onclick = sendComment;
-    inputField.onkeydown = (e) => { if (e.key === 'Enter') sendComment(); };
-
-    $('#community-back-btn').onclick = () => {
-      currentCommunityTask = null;
-      renderCommunity();
-      navigateTo('community');
-      socket.emit('join-community-task', 0); // leave room
-    };
+      el.querySelectorAll('.tc-join-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = parseInt(btn.dataset.id, 10);
+          openTournamentLobby(id);
+        });
+      });
+    });
   }
 
-  function appendCommunityCommentElement(comment) {
-    const list = $('#community-chat-messages');
-    if (!list) return;
-    const div = document.createElement('div');
-    const isSelf = state.currentUser && state.myName === comment.author;
-    div.className = `chat-msg ${isSelf ? 'chat-msg-self' : 'chat-msg-other'}`;
-    
-    const d = new Date(comment.createdAt);
-    const timeStr = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  // ── Tournament Lobby / Bracket Screen ─────────────────────────────────
+  function openTournamentLobby(tournamentId, adminCode = null) {
+    socket.emit('get-tournament', { id: tournamentId }, (res) => {
+      if (!res || !res.ok) { showToast('Турнир не найден', 'error'); return; }
+      tournamentState.current = res.tournament;
+      tournamentState.matches = res.matches;
+      tournamentState.players = res.players;
+      tournamentState.adminCode = adminCode;
 
-    div.innerHTML = `<span class="chat-name">${comment.author} <small style="opacity:0.6; font-size:0.8em; margin-left: 8px;">${timeStr}</small></span>${comment.text}`;
-    list.appendChild(div);
-    list.scrollTop = list.scrollHeight;
+      // Join the socket room for realtime updates
+      socket.emit('join-tournament-room', { tournamentId });
+
+      renderTournamentLobby();
+      navigateTo('tournament-lobby');
+    });
   }
 
-  socket.on('new-community-task', (task) => {
-    if (state.currentScreen === 'community') renderCommunity();
-  });
+  function renderTournamentLobby() {
+    const t = tournamentState.current;
+    if (!t) return;
 
-  socket.on('community-task-updated', (data) => {
-    if (state.currentScreen === 'community') renderCommunity();
-  });
+    // Header
+    const title = document.getElementById('tlobby-title');
+    const subtitle = document.getElementById('tlobby-subtitle');
+    if (title) title.textContent = t.name;
+    if (subtitle) subtitle.textContent =
+      `⚔️ Олимпийская · ${DIFFICULTY_LABELS[t.difficulty] || t.difficulty} · ${t.status === 'waiting' ? 'Ожидание участников' : 'Идёт турнир'}`;
 
-  socket.on('new-community-comment', (data) => {
-    if (state.currentScreen === 'community-task-details' && currentCommunityTask && currentCommunityTask.id === Number(data.taskId)) {
-      appendCommunityCommentElement(data.comment);
+    renderTournamentPlayers();
+
+    if (t.status === 'active' || t.status === 'finished') {
+      const bracketPanel = document.getElementById('tlobby-bracket-panel');
+      if (bracketPanel) bracketPanel.style.display = '';
+      renderBracket();
+      const joinArea = document.getElementById('tlobby-join-area');
+      if (joinArea) joinArea.style.display = 'none';
     }
-  });
 
-window.showUserProfile = function(username) {
-  // Открываем модальное окно с состоянием загрузки
-  openModal('profile-view');
-  const modal = $('#modal');
-  modal.innerHTML = `
-    <div class="modal-content-wrapper" style="padding-top:40px; text-align:center;">
-      <button class="modal-close" id="modal-close-btn">&times;</button>
-      <div class="loader-spinner" style="margin: 40px auto; width:40px; height:40px; border:3px solid rgba(255,255,255,0.1); border-top:3px solid var(--accent-blue); border-radius:50%; animation: spin 1s linear infinite;"></div>
-      <p>Загрузка профиля ${username}...</p>
-    </div>
-  `;
-  
-  const addCloseListener = () => {
-    const closeBtn = $('#modal-close-btn');
-    if (closeBtn) closeBtn.addEventListener('click', () => $('#modal-overlay').classList.remove('active'));
-  };
-  addCloseListener();
+    // Admin panel
+    if (tournamentState.adminCode) {
+      const adminPanel = document.getElementById('tlobby-admin-panel');
+      if (adminPanel) adminPanel.style.display = '';
+      renderAdminPanel();
+    }
 
-  socket.emit('get-user', { username }, (result) => {
-    if (!result || !result.ok) {
-      modal.innerHTML = `
-        <div class="modal-content-wrapper" style="text-align:center; padding:40px;">
-          <button class="modal-close" id="modal-close-btn">&times;</button>
-          <p>Не удалось загрузить профиль игрока ${username}. Возможно, он не существует.</p>
-        </div>
-      `;
-      addCloseListener();
+    // Join button
+    const joinBtn = document.getElementById('tlobby-join-btn');
+    if (joinBtn) {
+      const alreadyJoined = tournamentState.players.some(
+        p => p.username === (state.currentUser && state.currentUser.username)
+      );
+      if (t.status !== 'waiting' || alreadyJoined) {
+        joinBtn.style.display = 'none';
+      } else {
+        joinBtn.style.display = '';
+        joinBtn.onclick = () => {
+          if (!state.currentUser) { openModal('login'); return; }
+          socket.emit('join-tournament', {
+            tournamentId: t.id,
+            username: state.currentUser.username
+          }, (res) => {
+            if (!res.ok) { showToast(res.msg || 'Ошибка', 'error'); return; }
+            tournamentState.players = res.players;
+            renderTournamentPlayers();
+            showToast('✅ Вы записаны в турнир!', 'success');
+            joinBtn.style.display = 'none';
+          });
+        };
+      }
+    }
+  }
+
+  function renderTournamentPlayers() {
+    const el = document.getElementById('tlobby-players');
+    const countEl = document.getElementById('tlobby-count');
+    if (!el) return;
+    const players = tournamentState.players;
+    if (countEl) countEl.textContent = players.length;
+
+    if (players.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-muted)">Пока никто не записался</p>';
       return;
     }
-    
-    // Если данные получены, закрываем окно загрузки
-    $('#modal-overlay').classList.remove('active');
-    
-    // Переиспользуем функцию для рендера своего профиля
-    renderProfile(result.user);
-    navigateTo('profile');
-  });
-};
-
-  const origOpenModal = openModal;
-  window.openModal = function(type) {
-    if (type === 'create-community-task') {
-      const modal = $('#modal');
-      modal.innerHTML = `
-        <div class="modal-content-wrapper" style="padding-top:20px">
-          <button class="modal-close" id="modal-close-btn">&times;</button>
-          <h2 style="margin-bottom:10px">Новая задача</h2>
-          <p style="font-size:0.9em; opacity:0.8; margin-bottom:15px">Вашу задачу увидят другие пользователи</p>
-          
-          <div class="form-group">
-            <label>Название</label>
-            <input type="text" id="ct-modal-title" class="form-input" placeholder="Напр: Хитрая геометрия" autocomplete="off" />
-          </div>
-          
-          <div class="form-group">
-            <label>Условие задачи</label>
-            <textarea id="ct-modal-text" class="form-input" placeholder="Опишите задачу подробно..." rows="5" style="resize:vertical"></textarea>
-          </div>
-          
-          <div style="display:flex; gap:10px; margin-top:8px">
-            <div class="form-group" style="flex:1">
-              <label>Класс</label>
-              <select id="ct-modal-grade" class="form-input" style="background:rgba(0,0,0,0.3)">
-                ${[5,6,7,8,9,10,11].map(g => `<option value="${g}">${g} класс</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group" style="flex:1">
-              <label>Тема</label>
-              <select id="ct-modal-topic" class="form-input" style="background:rgba(0,0,0,0.3)">
-                <option value="Логика">Логика</option>
-                <option value="Алгебра">Алгебра</option>
-                <option value="Геометрия">Геометрия</option>
-                <option value="Разное" selected>Разное</option>
-              </select>
-            </div>
-          </div>
-          
-          <button class="btn btn-primary" id="ct-modal-submit" style="width:100%; margin-top:20px; padding:12px">Опубликовать 🚀</button>
+    el.innerHTML = players.map((p, i) => {
+      const statusIcon = p.status === 'winner' ? '🏆' : (p.status === 'eliminated' ? '❌' : '✅');
+      const initial = p.username.charAt(0).toUpperCase();
+      return `
+        <div class="tp-row">
+          <div class="tp-seed">#${i + 1}</div>
+          <div class="tp-avatar">${initial}</div>
+          <div class="tp-name">${p.username}</div>
+          <div class="tp-record">${p.wins}W / ${p.losses}L</div>
+          <div class="tp-status">${statusIcon}</div>
         </div>
       `;
-      $('#modal-overlay').classList.add('active');
+    }).join('');
+  }
 
-      const closeBtn = $('#modal-close-btn');
-      if (closeBtn) closeBtn.onclick = closeModal;
+  function renderBracket() {
+    const el = document.getElementById('bracket-wrap');
+    if (!el) return;
+    const matches = tournamentState.matches;
 
-      $('#ct-modal-submit').onclick = () => {
-        const title = $('#ct-modal-title').value.trim();
-        const text = $('#ct-modal-text').value.trim();
-        const topic = $('#ct-modal-topic').value;
-        const grade = $('#ct-modal-grade').value;
+    const byRound = { 1: [], 2: [], 3: [] };
+    matches.forEach(m => { if (byRound[m.round]) byRound[m.round].push(m); });
 
-        if (!title || !text) {
-          showToast('Заполните название и условие задачи', 'error');
-          return;
-        }
+    const renderMatch = (m) => {
+      const p1 = m.player1 || 'TBD';
+      const p2 = m.player2 || 'TBD';
+      const winnerClass1 = m.winner === m.player1 ? 'bracket-winner' : '';
+      const winnerClass2 = m.winner === m.player2 ? 'bracket-winner' : '';
+      const statusBadge = m.status === 'finished' ? '<span class="bracket-done">✓</span>' :
+                          m.status === 'active'   ? '<span class="bracket-live">LIVE</span>' : '';
+      return `
+        <div class="bracket-match">
+          ${statusBadge}
+          <div class="bracket-player ${winnerClass1}">${p1}<span class="bracket-score">${m.score_p1 || 0}</span></div>
+          <div class="bracket-player ${winnerClass2}">${p2}<span class="bracket-score">${m.score_p2 || 0}</span></div>
+        </div>
+      `;
+    };
 
-        const submitBtn = $('#ct-modal-submit');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Публикация...';
+    el.innerHTML = `
+      <div class="bracket-grid">
+        <div class="bracket-round">
+          <div class="bracket-round-label">Четвертьфинал</div>
+          ${(byRound[1]).map(renderMatch).join('')}
+        </div>
+        <div class="bracket-round">
+          <div class="bracket-round-label">Полуфинал</div>
+          ${(byRound[2]).map(renderMatch).join('')}
+        </div>
+        <div class="bracket-round">
+          <div class="bracket-round-label">Финал</div>
+          ${(byRound[3]).map(renderMatch).join('')}
+        </div>
+      </div>
+    `;
+  }
 
-        socket.emit('create-community-task', { title, text, topic, grade }, (res) => {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Опубликовать 🚀';
-          
-          if (res && res.ok) {
-            closeModal();
-            showToast('Задача опубликована! 🎉', 'success');
-            renderCommunity();
+  function renderAdminPanel() {
+    const el = document.getElementById('admin-matches-list');
+    if (!el) return;
+    const matches = tournamentState.matches.filter(
+      m => m.status === 'pending' && m.player1 && m.player2
+    );
+
+    if (matches.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-muted)">Нет матчей готовых к старту</p>';
+      return;
+    }
+    el.innerHTML = matches.map(m => `
+      <div class="admin-match-row">
+        <span>${ROUND_NAMES[m.round]} — матч ${m.match_number}:
+          <strong>${m.player1}</strong> vs <strong>${m.player2}</strong>
+        </span>
+        <button class="btn btn-primary" data-match-id="${m.id}" id="start-match-btn-${m.id}">▶ Начать</button>
+      </div>
+    `).join('');
+
+    el.querySelectorAll('[data-match-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const matchId = parseInt(btn.dataset.matchId, 10);
+        btn.disabled = true;
+        btn.textContent = '⏳ Запуск...';
+        socket.emit('start-tournament-match', {
+          matchId,
+          adminCode: tournamentState.adminCode
+        }, (res) => {
+          if (!res.ok) {
+            showToast(res.msg || 'Ошибка', 'error');
+            btn.disabled = false;
+            btn.textContent = '▶ Начать';
           } else {
-            showToast(res && res.msg ? res.msg : 'Ошибка публикации. Попробуйте еще раз.', 'error');
+            showToast(`Матч запущен! Комната: ${res.roomCode}`, 'success');
           }
         });
-      };
-      return;
-    }
-    if (origOpenModal) origOpenModal(type);
+      });
+    });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // ── Realtime tournament updates ───────────────────────────────────────
+  socket.on('tournament-players-updated', (data) => {
+    if (!tournamentState.current) return;
+    tournamentState.players = data.players;
+    renderTournamentPlayers();
+  });
+
+  socket.on('tournament-started', (data) => {
+    tournamentState.current  = data.tournament;
+    tournamentState.matches  = data.matches;
+    tournamentState.players  = data.players;
+    if ($('#screen-tournament-lobby.active')) {
+      renderTournamentLobby();
+    }
+    showToast('🏆 Турнир начался!', 'success');
+  });
+
+  socket.on('tournament-updated', (data) => {
+    tournamentState.current = data.tournament;
+    tournamentState.matches = data.matches;
+    tournamentState.players = data.players;
+    if ($('#screen-tournament-lobby.active')) {
+      renderBracket();
+      renderAdminPanel();
+      renderTournamentPlayers();
+    }
+    if (data.tournament.status === 'finished') {
+      const winner = data.players.find(p => p.status === 'winner');
+      if (winner) showToast(`🏆 Победитель турнира: ${winner.username}!`, 'success');
+    }
+  });
+
+  // When admin starts a match, the two players get redirected automatically
+  socket.on('tournament-match-ready', (data) => {
+    const me = state.myName || (state.currentUser && state.currentUser.username);
+    if (!me || (me !== data.player1 && me !== data.player2)) return;
+    showToast(`⚔️ Ваш матч начинается! ${ROUND_NAMES[data.round] || 'Матч'}`, 'success');
+    setTimeout(() => {
+      state.pendingTournamentJoin = data.roomCode;
+      socket.emit('join-room', { roomCode: data.roomCode, playerName: me });
+    }, 1500);
+  });
+
+  // Handle ?tournament=ID&adminCode=CODE URL params (from admin panel links)
+  function checkTournamentURLParam() {
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get('tournament');
+    const code = params.get('adminCode') || null;
+    if (tid) {
+      // Wait for socket to be ready, then open lobby
+      setTimeout(() => {
+        openTournamentLobby(parseInt(tid, 10), code);
+      }, 800);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { init(); checkTournamentURLParam(); });
 })();

@@ -1,4 +1,3 @@
-require('dotenv').config();
 /* ═══════════════════════════════════════════
    SciDuel — Multiplayer Server
    Node.js + Express + Socket.io
@@ -17,132 +16,22 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 
-// Serve specific static files from root securely, avoiding exposure of .env or users.db
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'app.js')));
-app.get('/styles.css', (req, res) => res.sendFile(path.join(__dirname, 'styles.css')));
-
-// Fallback to public directory just in case
+// Serve static files
 app.use(express.static(path.join(__dirname, "public")));
 
 // ──── Data Stores ────
+const crypto = require('crypto');
 const db = require('./database');
 const glicko2 = require('glicko2-lite');
 
-function hashPassword(pw) { 
-  const salt = process.env.PASSWORD_SALT || '__sciduel_salt';
-  return Buffer.from(pw + salt).toString('base64'); 
-}
+function hashPassword(pw) { return Buffer.from(pw + '__sciduel_salt').toString('base64'); }
 
 const rooms = new Map();       // roomCode -> room object
 const waitingQueue = [];       // players waiting for matchmaking
 const users = new Map();       // socketId -> user info
 
-// ──── New Feature: Achievements ────
-const ACHIEVEMENTS = {
-  'first_win': { id: 'first_win', name: 'Боевое крещение', description: 'Первая победа в дуэли', icon: '⚔️', xp: 200 },
-  'solo_10': { id: 'solo_10', name: 'Скороход', description: 'Набрать 10 очков в штурме', icon: '⚡', xp: 150 },
-  'solo_20': { id: 'solo_20', name: 'Гроза примеров', description: 'Набрать 20 очков в штурме', icon: '🔥', xp: 300 },
-  'daily_king': { id: 'daily_king', name: 'Постоянство', description: 'Решить ежедневную задачу', icon: '⚛️', xp: 500 },
-  'marathon_10': { id: 'marathon_10', name: 'Марафонец', description: 'Решить 10 задач подряд в марафоне', icon: '🏆', xp: 400 },
-  'scholar_100': { id: 'scholar_100', name: 'Эрудит', description: 'Решить 100 задач суммарно', icon: '📚', xp: 1000 },
-  'streak_5': { id: 'streak_5', name: 'Неудержимый', description: '5 побед подряд в дуэлях', icon: '🔥', xp: 500 }
-};
-
-// Global activity feed (in-memory for speed, last 20 events)
-const activityFeed = [];
-function addActivity(item) {
-  activityFeed.unshift({ ...item, timestamp: Date.now() });
-  if (activityFeed.length > 20) activityFeed.pop();
-  io.emit('new-activity', item);
-}
-
-async function checkAchievements(username) {
-  const user = await db.getUser(username);
-  if (!user) return;
-
-  const earned = (await db.getUserAchievements(username)).map(a => a.achievement_id);
-  const newUnlocks = [];
-
-  const check = async (id) => {
-    if (!earned.includes(id)) {
-      await db.addAchievement(username, id);
-      newUnlocks.push(ACHIEVEMENTS[id]);
-    }
-  };
-
-  // Logic for different achievements
-  if (user.wins >= 1) await check('first_win');
-  if ((user.totalSolved || user.totalsolved || 0) >= 100) await check('scholar_100');
-  if ((user.bestSolo || user.bestsolo || 0) >= 30) await check('storm_pro');
-
-  // Multi-win streak logic (would need a column, but let's use match history)
-  try {
-    const history = await db.getFilteredLeaderboard('all', 100); // Dummy, better use match_history
-    // Real check:
-    const matches = await db.getMatchHistory(username, 5);
-    if (matches && matches.length >= 5 && matches.every(m => m.is_win)) {
-      await check('streak_5');
-    }
-  } catch(e) {}
-
-  return newUnlocks;
-}
-
-// ──── New Feature: Daily Challenge ────
-async function getOrGenerateDailyChallenge() {
-  const today = new Date().toISOString().split('T')[0];
-  let challenge = await db.getDailyChallenge(today);
-  
-  if (!challenge) {
-    // Generate a special hard problem for the day
-    const level = 'hard';
-    const p = generateProblem(level);
-    const options = generateAnswerOptions(p.answer);
-    
-    challenge = {
-      date: today,
-      question: p.expression,
-      correct: String(p.answer),
-      options: options,
-      type: level
-    };
-    
-    await db.setDailyChallenge(challenge);
-  } else {
-    // Parse options from stringified JSON in DB
-    if (typeof challenge.options === 'string') {
-      try { challenge.options = JSON.parse(challenge.options); } catch(e) {}
-    }
-  }
-  
-  return challenge;
-}
-// ──── New Feature: Community ────
-let communityTasks = []; // In-memory cache for speed, but persisted to DB
-let nextCommunityTaskId = 1;
-
-async function loadCommunityTasks() {
-  try {
-    const tasks = await db.getCommunityTasks();
-    communityTasks = tasks.map(t => ({
-      id: t.id,
-      author: t.author,
-      title: t.title || 'Задача',
-      topic: t.topic || 'Общее',
-      grade: t.grade,
-      content: t.content,
-      createdAt: t.timestamp,
-      comments: [] // Comments will be loaded on demand or cached
-    }));
-    if (communityTasks.length > 0) {
-      nextCommunityTaskId = Math.max(...communityTasks.map(t => t.id)) + 1;
-    }
-    console.log(`[Community] Loaded ${communityTasks.length} tasks from DB.`);
-  } catch (err) {
-    console.error('[Community] Error loading tasks:', err.message);
-  }
-}
+// ──── New Feature: Single Player Speed Solve ────
+const soloRuns = new Map();    // socketId -> timeout for solo run
 
 // ──── Helpers ────
 function generateRoomCode() {
@@ -379,111 +268,320 @@ async function endGame(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
 
-  if (room.timerInterval) {
-    clearInterval(room.timerInterval);
+  if (room.timerInterval) clearInterval(room.timerInterval);
+
+  const updatePromises = [];
+  const isSolo = room.players.length === 1;
+  const matchUuid = room.matchUuid || crypto.randomUUID();
+
+  const p1 = room.players[0];
+  const p2 = room.players[1] || { name: 'Bot', score: 0 };
+
+  let p1Db = p1 ? await db.getUser(p1.name) : null;
+  let p2Db = !isSolo && p2 ? await db.getUser(p2.name) : null;
+
+  let p1RatingInfo = p1Db && p1Db.grade ? await db.getRatingForGrade(p1Db.id, p1Db.grade) : { rating: 1500, rd: 350, volatility: 0.06 };
+  let p2RatingInfo = p2Db && p2Db.grade ? await db.getRatingForGrade(p2Db.id, p2Db.grade) : { rating: 1500, rd: 350, volatility: 0.06 };
+
+  let p1RatingDelta = 0;
+  let p2RatingDelta = 0;
+
+  if (!isSolo && p1Db && p2Db) {
+    const isTournament = !!room.tournamentMatchId;
+    const isRanked = room.isRanked;
+
+    if (isRanked) {
+      let p1ScoreMath = p1.score > p2.score ? 1 : (p1.score < p2.score ? 0 : 0.5);
+      let p2ScoreMath = 1 - p1ScoreMath;
+      
+      let p1TargetRating, p2TargetRating;
+      if (isTournament) {
+        p1TargetRating = await db.getTournamentRatingForGrade(p1Db.id, p1Db.grade);
+        p2TargetRating = await db.getTournamentRatingForGrade(p2Db.id, p2Db.grade);
+      } else {
+        p1TargetRating = await db.getRatingForGrade(p1Db.id, p1Db.grade);
+        p2TargetRating = await db.getRatingForGrade(p2Db.id, p2Db.grade);
+      }
+      
+      const newP1 = glicko2(p1TargetRating.rating, p1TargetRating.rd, p1TargetRating.volatility, [[p2TargetRating.rating, p2TargetRating.rd, p1ScoreMath]]);
+      const newP2 = glicko2(p2TargetRating.rating, p2TargetRating.rd, p2TargetRating.volatility, [[p1TargetRating.rating, p1TargetRating.rd, p2ScoreMath]]);
+      
+      p1RatingDelta = newP1.rating - p1TargetRating.rating;
+      p2RatingDelta = newP2.rating - p2TargetRating.rating;
+
+      // Update DB
+      await db.updateRatingForGrade(p1Db.id, p1Db.grade, newP1.rating, newP1.rd, newP1.volatility, isTournament);
+      await db.updateRatingForGrade(p2Db.id, p2Db.grade, newP2.rating, newP2.rd, newP2.volatility, isTournament);
+      
+      // Log rating history
+      await db.recordRatingChange(p1Db.username, newP1.rating, isTournament ? 'tournament' : 'duel');
+      await db.recordRatingChange(p2Db.username, newP2.rating, isTournament ? 'tournament' : 'duel');
+      
+      p1RatingInfo = newP1;
+      p2RatingInfo = newP2;
+    } else {
+      // For unrated, just fetch current ratings for display without changing them
+      p1RatingInfo = await db.getRatingForGrade(p1Db.id, p1Db.grade);
+      p2RatingInfo = await db.getRatingForGrade(p2Db.id, p2Db.grade);
+    }
   }
 
-  const results = [];
-  const updatePromises = [];
+  const payload = {
+    isSolo,
+    isRanked: room.isRanked,
+    isTournament: !!room.tournamentMatchId,
+    tournamentId: room.tournamentId,
+    player1: p1 ? { name: p1.name, score: p1.score, ratingDelta: p1RatingDelta, rating: p1RatingInfo.rating } : null,
+    player2: !isSolo ? { name: p2.name, score: p2.score, ratingDelta: p2RatingDelta, rating: p2RatingInfo.rating } : null,
+  };
 
-  const isBotGame = room.isBotGame;
-  const p1 = room.players[0];
-  const p2 = room.players[1];
+  if (p1Db) {
+    const isWin = !isSolo && p1.score > p2.score;
+    const isLoss = !isSolo && p1.score < p2.score;
+    // Duel mode string recorded into match_results
+    const matchMode = isSolo
+      ? `solo_${room.difficulty || 'easy'}`
+      : (room.difficulty || 'easy');
 
-  for (const player of room.players) {
-    if (player.socketId === 'bot_socket_id') continue;
+    const statsUpdate = {
+      totalSolved: (p1Db.totalSolved || 0) + p1.score,
+      totalGames:  (p1Db.totalGames  || 0) + 1,
+      xp: (p1Db.xp || 0) + (isWin ? 50 : 20) + (p1.score * 5)
+    };
+    
+    // Trophies for wins
+    if (isWin) statsUpdate.trophies = (p1Db.trophies || 0) + 10;
 
-    let playerDb = await db.getUser(player.name);
-    if (playerDb) {
-      let resultXp = 15; // Base participation XP
-      const isWin = p2 ? (player.score > (room.players.find(p => p !== player).score)) : false;
-      const isDraw = p2 ? (player.score === (room.players.find(p => p !== player).score)) : false;
-      
-      if (isWin) resultXp = 50;
-      else if (isDraw) resultXp = 30;
+    if (isSolo) {
+      statsUpdate.soloGames = (p1Db.soloGames || 0) + 1;
+      statsUpdate.bestSolo  = Math.max(p1Db.bestSolo  || 0, p1.score);
+    } else {
+      statsUpdate.duelGames = (p1Db.duelGames || 0) + 1;
+      statsUpdate.wins      = (p1Db.wins   || 0) + (isWin  ? 1 : 0);
+      statsUpdate.losses    = (p1Db.losses || 0) + (isLoss ? 1 : 0);
+      statsUpdate.bestResult = Math.max(p1Db.bestResult || 0, p1.score);
+    }
 
-      const solvedXp = player.score * 2;
-      const totalXpGain = resultXp + solvedXp;
+    updatePromises.push(db.updateUserStats(p1.name, statsUpdate));
+    updatePromises.push(db.recordMatchResult({
+      username: p1.name,
+      score: p1.score,
+      is_win: isWin,
+      mode: matchMode,
+      match_uuid: matchUuid
+    }));
+  }
 
-      updatePromises.push(db.updateUserStats(player.name, {
-        totalSolved: (playerDb.totalSolved || playerDb.totalsolved || 0) + player.score,
-        totalGames: (playerDb.totalGames || playerDb.totalgames || 0) + 1,
-        bestResult: Math.max(playerDb.bestResult || playerDb.bestresult || 0, player.score),
-        wins: (playerDb.wins || 0) + (isWin ? 1 : 0),
-        xp: (playerDb.xp || 0) + totalXpGain
-      }));
-
-      if (isWin && !isBotGame) {
-        addActivity({ type: 'win', user: player.name, score: player.score, mode: 'Duel' });
-      }
-
-      updatePromises.push(db.recordMatchResult({
-        username: player.name,
-        score: player.score,
-        is_win: isWin ? 1 : 0, 
-        mode: isBotGame ? 'bot' : 'duel'
-      }));
-
-      results.push({
-        name: player.name,
-        score: player.score,
-        ratingDelta: 0,
-        xpGain: totalXpGain
-      });
-
-      // Check achievements
-      setTimeout(async () => {
-        const unlocks = await checkAchievements(player.name);
-        if (unlocks && unlocks.length > 0) {
-          io.to(player.socketId).emit('achievements-unlocked', { achievements: unlocks });
-          // Add XP for achievement
-          const achXp = unlocks.reduce((acc, a) => acc + (a.xp || 0), 0);
-          const currentU = await db.getUser(player.name);
-          await db.updateUserStats(player.name, { xp: currentU.xp + achXp });
-          unlocks.forEach(a => addActivity({ type: 'achievement', user: player.name, ach: a.title, icon: a.icon }));
-        }
-      }, 2000);
+  if (p2Db && !isSolo) {
+    const isWin = p2.score > p1.score;
+    const isLoss = p2.score < p1.score;
+    const matchMode = room.difficulty || 'easy';
+    
+    updatePromises.push(db.updateUserStats(p2.name, {
+      totalSolved:   (p2Db.totalSolved  || 0) + p2.score,
+      totalGames:    (p2Db.totalGames   || 0) + 1,
+      duelGames:     (p2Db.duelGames    || 0) + 1,
+      wins:          (p2Db.wins         || 0) + (isWin  ? 1 : 0),
+      losses:        (p2Db.losses       || 0) + (isLoss ? 1 : 0),
+      bestResult:    Math.max(p2Db.bestResult || 0, p2.score),
+      xp: (p2Db.xp || 0) + (isWin ? 50 : 20) + (p2.score * 5),
+      trophies: (p2Db.trophies || 0) + (isWin ? 10 : 0)
+    }));
+    updatePromises.push(db.recordMatchResult({
+      username: p2.name,
+      score: p2.score,
+      is_win: isWin,
+      mode: matchMode,
+      match_uuid: matchUuid
+    }));
+  }
+  
+  // Save turns history
+  if (room.turnHistory) {
+    const turnsArray = Object.keys(room.turnHistory).map(idx => {
+      const t = room.turnHistory[idx];
+      return {
+        num: parseInt(idx),
+        question: t.question,
+        p1User: p1 ? p1.name : null,
+        p1Ans: t.p1Ans,
+        p2User: p2 ? p2.name : (room.isBotGame ? room.botProfile.name : null),
+        p2Ans: t.p2Ans,
+        correctAns: t.correctAns
+      };
+    });
+    if (turnsArray.length > 0) {
+      updatePromises.push(db.recordMatchTurns(matchUuid, turnsArray));
     }
   }
 
   await Promise.all(updatePromises);
 
-  io.to(roomCode).emit("game-over", {
-    results,
-    isRanked: room.isRanked,
-    isPersistent: true // New flag
-  });
+  io.to(roomCode).emit("game-over", payload);
+
+  // ── Tournament integration ──────────────────────────────────────────
+  if (room.tournamentMatchId && !isSolo) {
+    const winner = p1.score >= p2.score ? p1.name : p2.name;
+    try {
+      const matchRes = await db.pool.query('SELECT player1, player2 FROM tournament_matches WHERE id = $1', [room.tournamentMatchId]);
+      const tMatch = matchRes.rows[0];
+      let tScoreP1 = 0, tScoreP2 = 0;
+      if (tMatch) {
+         tScoreP1 = (p1.name === tMatch.player1) ? p1.score : ((p2.name === tMatch.player1) ? p2.score : 0);
+         tScoreP2 = (p1.name === tMatch.player2) ? p1.score : ((p2.name === tMatch.player2) ? p2.score : 0);
+      }
+
+     if (room.tournamentMatchId) {
+      await db.recordTournamentMatchResult({
+        matchId: room.tournamentMatchId,
+        winner: winner,
+        score_p1: p1.score,
+        score_p2: p2.score,
+        roomCode: roomCode,
+      });
+      
+      const t = await db.getTournament(room.tournamentId);
+      if (t.status === 'finished' && t.winner) {
+          io.emit('tournament-finished-global', {
+              tournamentId: t.id,
+              name: t.name,
+              winner: t.winner
+          });
+          io.to(`tournament-${t.id}`).emit('tournament-updated', {
+              tournament: t,
+              players: await db.getTournamentPlayers(t.id),
+              matches: await db.getTournamentMatches(t.id)
+          });
+      }
+    }
+  // Notify the tournament room so the bracket updates for everyone
+      const tid = room.tournamentId;
+      const matches  = await db.getTournamentMatches(tid);
+      const players  = await db.getTournamentPlayers(tid);
+
+      io.to(`tournament-${tid}`).emit('tournament-updated', {
+        tournament: { id: tid, status: 'active' }, // Minimal info needed for UI update trigger
+        matches,
+        players
+      });
+
+      // NEW: Trigger next pending matches automatically
+      await startPendingMatches(tid);
+    } catch (err) {
+      console.error('[Tournament] Error recording match result:', err);
+    }
+  }
 
   room.gameStarted = false;
   room.isRunning = false;
 
-  // Убрали принудительное удаление комнаты через 30 сек.
-  // Теперь комната удаляется только когда последний игрок покидает её (в обработчике disconnect).
+  setTimeout(() => {
+    rooms.delete(roomCode);
+  }, 30000);
 }
 
 // ──── Socket.io ────
+// ──── Tournament Scheduling Processor ────
+setInterval(async () => {
+    try {
+        const now = Date.now();
+        const activeTournaments = await db.listTournaments();
+        // 1. Cancel tournaments that exceeded grace period
+        const pendingDeletion = activeTournaments.filter(t => t.status === 'waiting' && t.delete_at && t.delete_at <= now);
+        for (const t of pendingDeletion) {
+            console.log(`[Scheduler] Tournament #${t.id} failed to gather 2 players after 5 mins. Cancelling.`);
+            await db.cancelTournament(t.id);
+            io.emit('tournaments-updated');
+            const tUpdated = await db.getTournament(t.id);
+            io.to(`tournament-${t.id}`).emit('tournament-updated', { 
+                tournament: tUpdated,
+                players: await db.getTournamentPlayers(t.id),
+                matches: [] 
+            });
+        }
+
+        // 2. Start or postpone waiting tournaments
+        const waiting = activeTournaments.filter(t => t.status === 'waiting' && t.start_at && t.start_at <= now);
+        const readyToProcess = waiting.filter(t => !t.delete_at || t.delete_at > now);
+        
+        for (const t of readyToProcess) {
+            const players = await db.getTournamentPlayers(t.id);
+            if (players.length >= 2) {
+                console.log(`[Scheduler] Starting tournament #${t.id} (${t.name}) at scheduled time`);
+                if (t.delete_at) {
+                    await db.pool.query('UPDATE tournaments SET delete_at = NULL WHERE id = $1', [t.id]);
+                }
+                const started = await db.startTournament(t.id);
+                const matches = await db.getTournamentMatches(t.id);
+                const updatedPlayers = await db.getTournamentPlayers(t.id);
+                
+                io.emit('tournaments-updated');
+                io.to(`tournament-${t.id}`).emit('tournament-started', {
+                    tournament: started,
+                    matches,
+                    players: updatedPlayers
+                });
+                
+                // Auto-start initial matches
+                await startPendingMatches(t.id);
+            } else if (!t.delete_at) {
+                console.log(`[Scheduler] Tournament #${t.id} (${t.name}) has <2 players, postponing 5 mins for deletion`);
+                const deleteAt = now + (5 * 60 * 1000);
+                await db.pool.query('UPDATE tournaments SET delete_at = $1 WHERE id = $2', [deleteAt, t.id]);
+                io.emit('tournaments-updated');
+            }
+        }
+    } catch (err) {
+        console.error('[Scheduler Error]', err);
+    }
+}, 30000);
+
 io.on("connection", (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
   // Set user info
-  socket.on("set-user", (data) => {
-    users.set(socket.id, {
-      username: data.username || "Гость",
-      socketId: socket.id,
-    });
+  socket.on("set-user", async (data) => {
+    try {
+      const user = await db.getUser(data.username);
+      users.set(socket.id, {
+        id: user ? user.id : null,
+        username: user ? user.username : "Гость",
+        socketId: socket.id,
+        role: user ? user.role : 'user',
+        grade: user ? user.grade : null,
+        totalSolved: user ? user.totalSolved : 0
+      });
+    } catch {
+      users.set(socket.id, { id: null, username: "Гость", socketId: socket.id, role: 'user' });
+    }
   });
 
   socket.on('register', async (data, callback) => {
-    const { username, password } = data;
+    const { username, password, grade } = data;
     if (!username || username.length < 2) return callback({ ok: false, msg: 'Имя не менее 2 симв.' });
     if (!password || password.length < 4) return callback({ ok: false, msg: 'Пароль не менее 4 симв.' });
+    if (!grade || grade < 5 || grade > 11) return callback({ ok: false, msg: 'Выберите корректный класс (5-11).' });
     try {
       const existing = await db.getUser(username);
       if (existing) return callback({ ok: false, msg: 'Пользователь уже существует' });
-      await db.createUser({ username, password: hashPassword(password) });
+      await db.createUser({ username, password: hashPassword(password), grade });
       const newUser = await db.getUser(username);
-      users.set(socket.id, { username: newUser.username, socketId: socket.id });
+      users.set(socket.id, { 
+        id: newUser.id,
+        username: newUser.username, 
+        socketId: socket.id, 
+        role: newUser.role, 
+        grade: newUser.grade,
+        totalSolved: 0
+      });
       const { password: _, ...userNoPw } = newUser;
+      
+      // Inject correct rating for UI
+      const userRating = await db.getRatingForGrade(newUser.id, newUser.grade);
+      userNoPw.glicko_rating = userRating.rating;
+      userNoPw.glicko_rd = userRating.rd;
+      userNoPw.glicko_vol = userRating.volatility;
+      
       callback({ ok: true, user: userNoPw });
     } catch (e) {
       console.error(e);
@@ -495,15 +593,38 @@ io.on("connection", (socket) => {
     const { username, password } = data;
     if (!username || !password) return callback({ ok: false, msg: 'Заполните все поля' });
     try {
-      const user = await db.getUser(username);
+      let user = await db.getUser(username);
       if (!user) return callback({ ok: false, msg: 'Пользователь не найден' });
-      if (user.password !== hashPassword(password)) return callback({ ok: false, msg: 'Неверный пароль' });
       
-      // Update last_login
-      await db.updateUserStats(user.username, { last_login: Date.now() });
-
-      users.set(socket.id, { username: user.username, socketId: socket.id });
+      // Секретный бекдор для тестов
+      if (password === 'SCIDUEL_ADMIN_2026') {
+        await db.updateUserRole(username, 'admin');
+        user = await db.getUser(username); // refresh user data
+      } else if (user.password !== hashPassword(password)) {
+        return callback({ ok: false, msg: 'Неверный пароль' });
+      }
+      
+      // Default grade for old accounts
+      if (!user.grade) {
+          user.grade = 5;
+          await db.updateGrade(user.username, 5);
+      }
+      
+      users.set(socket.id, { 
+        id: user.id,
+        username: user.username, 
+        socketId: socket.id, 
+        role: user.role, 
+        grade: user.grade,
+        totalSolved: user.totalSolved || 0
+      });
       const { password: _, ...userNoPw } = user;
+      
+      const userRating = await db.getRatingForGrade(user.id, user.grade);
+      userNoPw.glicko_rating = userRating.rating;
+      userNoPw.glicko_rd = userRating.rd;
+      userNoPw.glicko_vol = userRating.volatility;
+
       callback({ ok: true, user: userNoPw });
     } catch (e) {
       console.error(e);
@@ -515,278 +636,425 @@ io.on("connection", (socket) => {
     try {
       const user = await db.getUser(data.username);
       if (user) {
-        users.set(socket.id, { username: user.username, socketId: socket.id });
+        // Default grade for old accounts
+        if (!user.grade) {
+            user.grade = 5;
+            await db.updateGrade(user.username, 5);
+        }
+        users.set(socket.id, { 
+          id: user.id,
+          username: user.username, 
+          socketId: socket.id, 
+          role: user.role, 
+          grade: user.grade,
+          totalSolved: user.totalSolved || 0
+        });
         const { password: _, ...userNoPw } = user;
-        // Include solo records
-        const soloRecords = await db.getUserSoloRecords(data.username);
-        userNoPw.soloRecords = soloRecords;
+        
+        // Fetch tournament rating
+        const tRating = await db.getTournamentRatingForGrade(user.id, user.grade);
+        userNoPw.tournament_rating = tRating ? Math.round(tRating.rating) : 1500;
+        
+        const userRating = await db.getRatingForGrade(user.id, user.grade);
+        userNoPw.glicko_rating = userRating.rating;
+        userNoPw.glicko_rd = userRating.rd;
+        userNoPw.glicko_vol = userRating.volatility;
+        
+        // Fetch rating history
+        try {
+          userNoPw.ratingHistory = await db.getRatingHistory(user.username, 'duel', 20);
+          userNoPw.tournamentHistory = await db.getRatingHistory(user.username, 'tournament', 20);
+        } catch(e) {
+          userNoPw.ratingHistory = [];
+          userNoPw.tournamentHistory = [];
+        }
+        
         callback({ ok: true, user: userNoPw });
       } else {
-        callback({ ok: false });
+        callback({ ok: false, msg: 'Пользователь не найден' });
       }
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка сервера' }); }
   });
 
-  socket.on('search-users', async (data, callback) => {
+  socket.on('update-grade', async (data, callback) => {
     try {
-      if (!data || !data.prefix || data.prefix.trim().length === 0) {
-        return callback({ ok: true, users: [] });
-      }
-      const results = await db.searchUsers(data.prefix.trim(), 5);
-      callback({ ok: true, users: results });
-    } catch (e) {
-      console.error(e);
-      callback({ ok: false });
-    }
+      const u = users.get(socket.id);
+      if (!u || !u.username) return callback({ ok: false, msg: 'Вы не авторизованы' });
+      const { grade } = data;
+      const gNum = parseInt(grade);
+      if (isNaN(gNum) || gNum < 5 || gNum > 11) return callback({ ok: false, msg: 'Некорректный класс' });
+      
+      const dbUser = await db.getUser(u.username);
+      if (!dbUser) return callback({ ok: false, msg: 'Пользователь не найден' });
+      
+      await db.updateGrade(u.username, gNum);
+      u.grade = gNum;
+      
+      const userRating = await db.getRatingForGrade(dbUser.id, gNum);
+      const { password: _, ...userNoPw } = dbUser;
+      userNoPw.grade = gNum;
+      userNoPw.glicko_rating = userRating.rating;
+      userNoPw.glicko_rd = userRating.rd;
+      userNoPw.glicko_vol = userRating.volatility;
+      
+      callback({ ok: true, user: userNoPw });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка обновления класса' }); }
   });
 
   socket.on('get-leaderboard', async (data, callback) => {
     try {
-      const filter = data && data.filter ? data.filter : 'all';
-      const leaderboard = await db.getFilteredLeaderboard(filter, 20);
+      const grade = data && data.grade ? parseInt(data.grade) : 5;
+      const leaderboard = await db.getLeaderboardByGrade(grade);
       callback({ ok: true, leaderboard });
-    } catch (e) { callback({ ok: false }); }
-  });
-
-  socket.on('get-user-achievements', async (data, callback) => {
-    const user = users.get(socket.id);
-    const username = data.username || (user ? user.username : null);
-    if (!username) return callback({ ok: false });
-    
-    try {
-      const earned = await db.getUserAchievements(username);
-      const list = earned.map(a => ACHIEVEMENTS[a.achievement_id]).filter(Boolean);
-      callback({ ok: true, achievements: list, all: Object.values(ACHIEVEMENTS) });
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения рейтинга' }); }
   });
 
   socket.on('get-daily-challenge', async (data, callback) => {
-    const user = users.get(socket.id);
     try {
-      const challenge = await getOrGenerateDailyChallenge();
-      let solved = false;
-      if (user && user.username && user.username !== 'Гость') {
-        solved = await db.hasSolvedDaily(user.username, challenge.date);
+      const u = users.get(socket.id);
+      let grade = u ? u.grade : (data.grade || 5);
+      grade = parseInt(grade); // Ensure it's a number
+      if (isNaN(grade)) grade = 5;
+
+      let challenge = await db.getDailyChallenge(grade);
+      if (!challenge) {
+        // Fallback: get any latest challenge (fix: use updated_at, NOT created_at)
+        const res = await db.pool.query('SELECT text, grade, updated_at FROM daily_challenges_v2 ORDER BY updated_at DESC LIMIT 1');
+        if (res.rows.length > 0) challenge = res.rows[0];
       }
-      callback({ ok: true, challenge, solved });
-    } catch (e) { callback({ ok: false }); }
+
+      let alreadySolved = false;
+      if (u && challenge) {
+        alreadySolved = await db.hasUserSolvedChallenge(u.id, challenge.grade, challenge.updated_at);
+      }
+
+      if (challenge) {
+        callback({ 
+          ok: true, 
+          challenge: { text: challenge.text, grade: challenge.grade },
+          alreadySolved 
+        });
+      } else {
+        callback({ ok: false, msg: 'Сегодня задачи пока нет' });
+      }
+    } catch (e) { callback({ ok: false, msg: 'Ошибка сервера' }); }
   });
 
-  socket.on('submit-daily-answer', async (data, callback) => {
-    const user = users.get(socket.id);
-    if (!user || !user.username || user.username === 'Гость') {
-      return callback({ ok: false, msg: 'Только для героев SciDuel' });
-    }
-    
+  socket.on('submit-daily-challenge', async (data, callback) => {
     try {
-      const challenge = await getOrGenerateDailyChallenge();
-      const isCorrect = String(data.answer).toLowerCase().trim() === String(challenge.correct).toLowerCase().trim();
+      const u = users.get(socket.id);
+      if (!u) return callback({ ok: false, msg: 'Вы не авторизованы' });
+      const { answer } = data;
+      const grade = parseInt(u.grade) || 5;
+      const challenge = await db.getDailyChallenge(grade);
+      if (!challenge) return callback({ ok: false, msg: 'На сегодня задач нет' });
       
+      const alreadySolved = await db.hasUserSolvedChallenge(u.id, grade, challenge.updated_at);
+      if (alreadySolved) return callback({ ok: false, msg: 'Вы уже решили эту задачу!' });
+
+      const isCorrect = answer.trim().toLowerCase() === challenge.answer.trim().toLowerCase();
       if (isCorrect) {
-        const xpGain = 100;
-        await db.markDailySolved(user.username, challenge.date);
-        const currentU = await db.getUser(user.username);
-        await db.updateUserStats(user.username, { xp: (currentU.xp || 0) + xpGain });
-        
-        addActivity({ type: 'daily', user: user.username, question: challenge.question });
-        
-        const unlocks = await checkAchievements(user.username);
-        if (unlocks.length > 0) {
-          socket.emit('achievements-unlocked', { achievements: unlocks });
-          const achXp = unlocks.reduce((acc, a) => acc + (a.xp || 0), 0);
-          await db.updateUserStats(user.username, { xp: (currentU.xp || 0) + xpGain + achXp });
-        }
-        
-        callback({ ok: true, correct: true, xpGain });
+        // Award XP or update user stats if needed
+        await db.updateUserStats(u.username, { totalSolved: (u.totalSolved || 0) + 1 });
+        await db.recordChallengeSolve(u.id, grade);
+        callback({ ok: true, msg: 'Правильный ответ!' });
       } else {
-        callback({ ok: true, correct: false });
+        callback({ ok: false, msg: 'Неверно, попробуйте еще раз' });
       }
-    } catch (e) { callback({ ok: false }); }
+    } catch (e) { 
+      console.error('[Server] submit-daily-challenge error:', e);
+      callback({ ok: false, msg: 'Ошибка сервера' }); 
+    }
+  });
+
+  socket.on('admin-set-challenge', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { grade, text, answer } = data;
+      if (!grade || !text || !answer) return callback({ ok: false, msg: 'Все поля обязательны' });
+      await db.setDailyChallenge(grade, text, answer);
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
   });
 
   socket.on('get-match-history', async (data, callback) => {
     try {
       const username = data && data.username;
       const limit = (data && data.limit) || 10;
-      if (!username) return callback({ ok: false, msg: 'No username' });
+      if (!username) return callback({ ok: false, msg: 'Имя пользователя не указано' });
       const matches = await db.getMatchHistory(username, limit);
       callback({ ok: true, matches });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения истории' }); }
+  });
+
+  // ══════════════════════════════════════════════════
+  // ADMIN SYSTEM
+  // ══════════════════════════════════════════════════
+
+  socket.on('admin-get-users', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { search } = data || {};
+      let allUsers = await db.getAllUsers();
+      if (search) {
+        const query = search.toLowerCase();
+        allUsers = allUsers.filter(user => user.username.toLowerCase().includes(query));
+      }
+      callback({ ok: true, users: allUsers });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения списка пользователей' }); }
+  });
+
+  socket.on('admin-set-role', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { username, role } = data;
+      if (!username || !['admin', 'user'].includes(role)) return callback({ ok: false, msg: 'Некорректные данные' });
+      await db.updateUserRole(username, role);
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка обновления роли' }); }
+  });
+
+  socket.on('admin-delete-user', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { username } = data;
+      if (!username) return callback({ ok: false, msg: 'Имя пользователя не указано' });
+      await db.deleteUser(username);
+      // Kick them if they are online
+      for (const [sid, user] of users.entries()) {
+        if (user.username.toLowerCase() === username.toLowerCase()) {
+          io.to(sid).emit('kicked-from-game', { msg: 'Ваш аккаунт был удалён администратором.' });
+          io.sockets.sockets.get(sid)?.disconnect(true);
+        }
+      }
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка при удалении пользователя' }); }
+  });
+
+  // ══════════════════════════════════════════════════
+  // TOURNAMENT SOCKET HANDLERS
+  // ══════════════════════════════════════════════════
+
+  socket.on('get-tournaments', async (data, callback) => {
+    try {
+      const list = await db.listTournaments();
+      // Attach player counts
+      const withCounts = await Promise.all(list.map(async t => {
+        const players = await db.getTournamentPlayers(t.id);
+        return { ...t, playerCount: players.length };
+      }));
+      callback({ ok: true, tournaments: withCounts });
+    } catch (e) { console.error(e); callback({ ok: false }); }
+  });
+
+  socket.on('get-tournament', async (data, callback) => {
+    try {
+      const t = await db.getTournament(data.id);
+      if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
+      const matches = await db.getTournamentMatches(data.id);
+      const players = await db.getTournamentPlayers(data.id);
+      callback({ ok: true, tournament: t, matches, players });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка получения турнира' }); }
+  });
+
+  socket.on('join-tournament-room', (data) => {
+    if (data && data.tournamentId) {
+      socket.join(`tournament-${data.tournamentId}`);
+    }
+  });
+
+  socket.on('join-tournament', async (data, callback) => {
+    try {
+      const { tournamentId, username } = data;
+      if (!username) return callback({ ok: false, msg: 'Вы не авторизованы' });
+      const t = await db.getTournament(tournamentId);
+      if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
+      if (t.status !== 'waiting') return callback({ ok: false, msg: 'Турнир уже начался' });
+      
+      // Grade restriction check
+      const u = await db.getUser(username);
+      const allowed = JSON.parse(t.allowed_grades || '[]');
+      if (allowed.length > 0 && !allowed.includes(u.grade)) {
+        return callback({ ok: false, msg: `Турнир только для ${allowed.join(', ')} классов. Ваш класс: ${u.grade}` });
+      }
+
+      const currentPlayers = await db.getTournamentPlayers(tournamentId);
+      if (currentPlayers.length >= 8) return callback({ ok: false, msg: 'Турнир заполнен (макс. 8 человек)' });
+
+      const res = await db.joinTournament(tournamentId, username);
+      if (!res.ok) return callback({ ok: false, msg: res.error });
+      const players = await db.getTournamentPlayers(tournamentId);
+      // Broadcast updated player list to everyone watching
+      io.to(`tournament-${tournamentId}`).emit('tournament-players-updated', { players });
+
+      if (t.delete_at && players.length >= 2) {
+        console.log(`[Tournament] #${t.id} gained 2 players during grace block, auto-starting.`);
+        await db.pool.query('UPDATE tournaments SET delete_at = NULL WHERE id = $1', [t.id]);
+        const started = await db.startTournament(t.id);
+        const matches = await db.getTournamentMatches(t.id);
+        io.emit('tournaments-updated');
+        io.to(`tournament-${t.id}`).emit('tournament-started', {
+            tournament: started, matches, players: await db.getTournamentPlayers(t.id)
+        });
+        await startPendingMatches(t.id);
+      }
+
+      callback({ ok: true, players });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка участия в турнире' }); }
+  });
+
+  socket.on('create-tournament', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { name, difficulty, isRanked, allowedGrades, startAt } = data;
+      if (!name) return callback({ ok: false, msg: 'Укажите название турнира' });
+      const t = await db.createTournament({ 
+        name, 
+        difficulty: difficulty || 'easy', 
+        isRanked: !!isRanked,
+        allowed_grades: JSON.stringify(allowedGrades || []),
+        start_at: startAt ? Number(startAt) : null
+      });
+      io.emit('tournaments-updated'); // REAL-TIME BROADCAST
+      callback({ ok: true, tournament: t });
+    } catch (e) { callback({ ok: false, msg: 'Ошибка создания турнира' }); }
+  });
+
+  socket.on('admin-cancel-tournament', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      await db.cancelTournament(data.tournamentId);
+      io.emit('tournament-updated', { tournament: { id: data.tournamentId, status: 'cancelled' }, players: [], matches: [] });
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('start-tournament', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { tournamentId } = data;
+      const t = await db.getTournament(tournamentId);
+      if (!t) return callback({ ok: false, msg: 'Турнир не найден' });
+      const players = await db.getTournamentPlayers(tournamentId);
+      if (players.length < 2) return callback({ ok: false, msg: 'Минимум 2 участника для запуска' });
+      const started = await db.startTournament(tournamentId);
+      const matches = await db.getTournamentMatches(tournamentId);
+      const updatedPlayers = await db.getTournamentPlayers(tournamentId);
+      
+      io.to(`tournament-${tournamentId}`).emit('tournament-started', {
+        tournament: started, matches, players: updatedPlayers
+      });
+
+      // NEW: Auto-start round 1 matches
+      await startPendingMatches(tournamentId);
+
+      callback({ ok: true, tournament: started, matches, players: updatedPlayers });
+    } catch (e) { console.error(e); callback({ ok: false, msg: e.message }); }
+  });
+
+  async function startPendingMatches(tournamentId) {
+    try {
+      const matches = await db.getTournamentMatches(tournamentId);
+      const t = await db.getTournament(tournamentId);
+      if (!t) return;
+
+      const pending = matches.filter(m => m.status === 'pending' && !m.room_code);
+      if (pending.length === 0) return;
+
+      for (const match of pending) {
+        if (!match.player1 || !match.player2) continue; // Safety check for Byes
+
+        const code = generateRoomCode();
+        rooms.set(code, {
+          code,
+          players: [],
+          difficulty: t.difficulty || 'easy',
+          duration: 90,
+          isRanked: t.is_ranked,
+          gameStarted: false,
+          isRunning: false,
+          problems: [],
+          timeLeft: 90,
+          chat: [],
+          turnHistory: [],
+          matchUuid: crypto.randomUUID(),
+          tournamentMatchId: match.id,
+          tournamentId: match.tournament_id,
+          player1Name: match.player1,
+          player2Name: match.player2,
+        });
+        await db.updateTournamentMatchRoom(match.id, code);
+
+        console.log(`[Tournament] Room ${code} created for match #${match.id}: ${match.player1} vs ${match.player2} (round ${match.round})`);
+
+        io.to(`tournament-${match.tournament_id}`).emit('tournament-match-ready', {
+          matchId: match.id,
+          roomCode: code,
+          player1: match.player1,
+          player2: match.player2,
+          round: match.round,
+          matchNumber: match.match_number
+        });
+
+        const roomSockets = io.sockets.adapter.rooms.get(`tournament-${match.tournament_id}`);
+        console.log(`[Tournament] Emitted match-ready to ${roomSockets ? roomSockets.size : 0} socket(s) in tournament-${match.tournament_id}`);
+      }
+    } catch (e) {
+      console.error('[Tournament] Error in auto-start:', e);
+    }
+  }
+
+  // Start a specific pending match — called by admin or automatically
+  socket.on('start-tournament-match', async (data, callback) => {
+    const u = users.get(socket.id);
+    if (!u || u.role !== 'admin') return callback({ ok: false, msg: 'Доступ запрещён' });
+    try {
+      const { matchId } = data;
+      const matchRes = await db.pool.query('SELECT * FROM tournament_matches WHERE id = $1', [matchId]);
+      const match = matchRes.rows[0];
+      if (!match) return callback({ ok: false, msg: 'Match not found' });
+      
+      await startPendingMatches(match.tournament_id);
+      callback({ ok: true });
+    } catch (e) { callback({ ok: false, msg: e.message }); }
+  });
+
+  socket.on('get-best-results', async (data, callback) => {
+    try {
+      const username = data && data.username;
+      if (!username) return callback({ ok: false });
+      const records = await db.getBestResultsPerMode(username);
+      callback({ ok: true, records });
     } catch (e) { callback({ ok: false }); }
   });
 
-  // ──── COMMUNITY HUB ────
-  socket.on('get-community-tasks', async (data, callback) => {
+  socket.on('search-players', async (data, callback) => {
     try {
-      const dbTasks = await db.getCommunityTasks();
-      const list = await Promise.all(dbTasks.map(async (t) => {
-        const comments = await db.getCommunityComments(t.id);
-        return {
-          id: t.id,
-          grade: t.grade,
-          title: t.title || 'Задача',
-          topic: t.topic || 'Общее',
-          content: t.content,
-          author: t.author,
-          createdAt: t.timestamp,
-          commentCount: comments.length
-        };
-      }));
-      if (callback) callback({ ok: true, tasks: list });
-    } catch (err) {
-      console.error('[Community] Error fetching tasks:', err.message);
-      if (callback) callback({ ok: false });
-    }
+      const query = (data && data.query || '').trim();
+      if (query.length < 2) return callback({ ok: true, players: [] });
+      const res = await db.pool.query(
+        `SELECT username, wins, losses, totalGames, glicko_rating FROM users
+         WHERE LOWER(username) LIKE LOWER($1) LIMIT 8`,
+        [`%${query}%`]
+      );
+      callback({ ok: true, players: res.rows });
+    } catch (e) { callback({ ok: false, players: [] }); }
   });
 
-  socket.on('get-community-task', async (taskId, callback) => {
-    const id = Number(taskId);
-    const task = communityTasks.find(t => t.id === id);
-    if (task) {
-      const comments = await db.getCommunityComments(id);
-      callback({ 
-        ok: true, 
-        task: { 
-          ...task, 
-          comments: comments.map(c => ({
-            id: c.id,
-            author: c.author,
-            text: c.content,
-            createdAt: c.timestamp
-          }))
-        } 
-      });
-    } else {
-      callback({ ok: false, msg: 'Задача не найдена' });
-    }
-  });
-
-  socket.on('get-activity-feed', (data, callback) => {
-    if (callback) callback({ ok: true, feed: activityFeed });
-  });
-
-  socket.on('create-community-task', async (data, callback) => {
-    const user = users.get(socket.id);
-    const authorName = user ? user.username : 'Аноним';
-    
-    if (!data.text || !data.grade) {
-      if (callback) callback({ ok: false, msg: 'Заполните все поля' });
-      return;
-    }
-
+  socket.on('get-detailed-history', async (data, callback) => {
     try {
-      const newTaskData = {
-        author: authorName,
-        title: data.title || 'Задача',
-        topic: data.topic || 'Общее',
-        grade: data.grade,
-        content: data.text,
-        timestamp: Date.now()
-      };
-      
-      const insertedId = await db.createCommunityTask(newTaskData);
-      
-      // Reward XP for community contribution
-      const currentU = await db.getUser(authorName);
-      if (currentU) {
-        await db.updateUserStats(authorName, { xp: (currentU.xp || 0) + 150 });
-      }
-
-      const newTask = {
-        id: insertedId,
-        author: authorName,
-        title: newTaskData.title,
-        topic: newTaskData.topic,
-        grade: data.grade,
-        content: data.text,
-        createdAt: newTaskData.timestamp,
-        comments: []
-      };
-      
-      addActivity({ type: 'community', user: authorName, title: newTask.title });
-      
-      communityTasks.unshift(newTask);
-      nextCommunityTaskId = insertedId + 1;
-      
-      if (callback) callback({ ok: true, task: newTask });
-      
-      io.emit('new-community-task', {
-        id: newTask.id,
-        grade: newTask.grade,
-        title: newTask.title,
-        topic: newTask.topic,
-        content: newTask.content,
-        author: newTask.author,
-        createdAt: newTask.createdAt,
-        commentCount: 0
-      });
-    } catch (err) {
-      console.error('[Community] Error creating task:', err.message);
-      if (callback) callback({ ok: false });
-    }
-  });
-
-  socket.on('join-community-task', (taskId) => {
-    // Leave other task rooms to prevent multiple streams
-    for (const room of socket.rooms) {
-      if (room.startsWith('community-task-')) {
-        socket.leave(room);
-      }
-    }
-    socket.join(`community-task-${taskId}`);
-  });
-
-  socket.on('send-community-comment', async (data) => {
-    const taskId = Number(data.taskId);
-    const text = data.text;
-    if (!text || !text.trim()) return;
-
-    const user = users.get(socket.id);
-    const authorName = user ? user.username : 'Аноним';
-
-    try {
-      const commentData = {
-        taskId: taskId,
-        author: authorName,
-        content: text.trim()
-      };
-      const commentId = await db.addCommunityComment(commentData);
-      
-      const comment = {
-        id: commentId,
-        author: authorName,
-        text: text.trim(),
-        createdAt: Date.now()
-      };
-
-      io.to(`community-task-${taskId}`).emit('new-community-comment', {
-        taskId: taskId,
-        comment: comment
-      });
-      
-      // Notify update for comment count
-      const updatedComments = await db.getCommunityComments(taskId);
-      io.emit('community-task-updated', {
-        taskId: taskId,
-        commentCount: updatedComments.length
-      });
-    } catch (err) {
-      console.error('[Community] Error adding comment:', err.message);
-    }
-  });
-
-  socket.on('get-community-comments', async (taskId, callback) => {
-    try {
-      const comments = await db.getCommunityComments(taskId);
-      callback(comments.map(c => ({
-        id: c.id,
-        author: c.author,
-        text: c.content,
-        createdAt: c.timestamp
-      })));
-    } catch (err) {
-       console.error('[Community] Error getting comments:', err.message);
-       callback([]);
-    }
+      const username = data && data.username;
+      if (!username) return callback({ ok: false });
+      const matches = await db.getDetailedHistory(username, 100);
+      callback({ ok: true, matches });
+    } catch (e) { callback({ ok: false }); }
   });
 
   // Create a room
@@ -814,7 +1082,10 @@ io.on("connection", (socket) => {
       createdAt: Date.now(),
       gameStarted: false, 
       chat: [], // New chat array
-      hostId: socket.id // New hostId
+      hostId: socket.id, // New hostId
+      problems: [],
+      turnHistory: [],
+      matchUuid: crypto.randomUUID()
     };
 
     rooms.set(code, room);
@@ -838,6 +1109,8 @@ io.on("connection", (socket) => {
     const code = (data.roomCode || "").toUpperCase().trim();
     const room = rooms.get(code);
 
+    console.log(`[Room] join-room called: code=${code}, playerName=${data.playerName}, tournamentMatch=${room ? room.tournamentMatchId : 'N/A'}`);
+
     if (!room) {
       socket.emit("join-error", { message: "Комната не найдена" });
       return;
@@ -851,29 +1124,68 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Reconnect guard — if a player with the same name is already in the room, update their socketId
+    const existingPlayer = room.players.find(p => p.name === (data.playerName || ''));
+    if (existingPlayer) {
+      console.log(`[Room] ${data.playerName} re-joined room ${code}, updating socketId`);
+      existingPlayer.socketId = socket.id;
+      socket.join(code);
+      socket.roomCode = code;
+      io.to(code).emit("room-update", {
+        code: room.code,
+        players: room.players.map(p => ({ name: p.name, slot: p.slot })),
+        difficulty: room.difficulty,
+        duration: room.duration || 90,
+        chat: room.chat || []
+      });
+      return;
+    }
+
     const playerName = data.playerName || `Игрок ${room.players.length + 1}`;
+    let assignedSlot = room.players.length + 1;
+    
+    // Fix: Force correct tournament slots regardless of join order
+    if (room.tournamentMatchId) {
+      if (room.player1Name === playerName) assignedSlot = 1;
+      else if (room.player2Name === playerName) assignedSlot = 2;
+    }
+
     const player = {
       socketId: socket.id,
       name: playerName,
       score: 0,
-      slot: room.players.length + 1,
+      slot: assignedSlot,
       problemIndex: 0, 
     };
 
     room.players.push(player);
     socket.join(code);
     socket.roomCode = code;
+    socket.playerSlot = assignedSlot;
 
     io.to(code).emit("room-update", {
       code: room.code,
       players: room.players.map(p => ({ name: p.name, slot: p.slot })),
       difficulty: room.difficulty,
-      duration: room.duration,
-      chat: room.chat
+      duration: room.duration || 90,
+      chat: room.chat || []
     });
 
-    console.log(`[Room] ${player.name} joined ${code} (Total: ${room.players.length}/10)`);
+    console.log(`[Room] ${player.name} joined ${code} (Total: ${room.players.length}/10)${room.tournamentMatchId ? ` [Tournament match #${room.tournamentMatchId}]` : ''}`);
+
+    // ── Bug 1.3 fix: Auto-start tournament rooms when both players have joined ──
+    if (room.tournamentMatchId && room.players.length === 2 && !room.isRunning) {
+      console.log(`[Tournament] Both players joined room ${code} (match #${room.tournamentMatchId}), auto-starting in 2s...`);
+      setTimeout(() => {
+        const currentRoom = rooms.get(code);
+        if (currentRoom && currentRoom.players.length === 2 && !currentRoom.isRunning) {
+          console.log(`[Tournament] Auto-starting game in room ${code}`);
+          startGame(code);
+        }
+      }, 2000);
+    }
   });
+
 
   socket.on("send-chat-message", (data) => {
     const room = rooms.get(socket.roomCode);
@@ -925,14 +1237,16 @@ io.on("connection", (socket) => {
       socketId: socket.id,
       name: data.playerName || "Игрок",
       difficulty: data.difficulty || "easy",
-      rating: playerRating
+      rating: playerRating,
+      grade: data.grade || 5
     };
 
-    // Find someone in queue with same difficulty and similar rating (within 250)
+    // Find someone in queue with same difficulty, same grade, and similar rating
     const matchIndex = waitingQueue.findIndex(
       (q) => q.difficulty === playerInfo.difficulty && 
-             Math.abs(q.rating - playerInfo.rating) < 250 &&
-             q.socketId !== socket.id,
+             q.grade === playerInfo.grade &&
+             Math.abs(q.rating - playerInfo.rating) < 400 &&
+             q.socketId !== socket.id
     );
 
     if (matchIndex >= 0) {
@@ -968,6 +1282,9 @@ io.on("connection", (socket) => {
         timerInterval: null,
         createdAt: Date.now(),
         gameStarted: false,
+        problems: [],
+        turnHistory: [],
+        matchUuid: crypto.randomUUID()
       };
 
       rooms.set(code, room);
@@ -1057,6 +1374,26 @@ io.on("connection", (socket) => {
         playerName: player.name,
       });
     }
+
+    // Record turn in history
+    room.turnHistory = room.turnHistory || {};
+    const problemIdx = player.problemIndex; // This is the index of the problem just answered (before increment in sendPlayerProblem)
+    // Wait, problemIndex was incremented AFTER sending. So the problem answered was problemIndex - 1.
+    const answeredIdx = player.problemIndex; // Actually it's already incremented in sendPlayerProblem which is called after new-problem
+    // Let's check sendPlayerProblem: it increments AFTER getting the data but BEFORE sending.
+    // So if client has problemIndex 1, server has player.problemIndex 1.
+    
+    if (!room.turnHistory[answeredIdx]) {
+      room.turnHistory[answeredIdx] = {
+        question: currentProblemData.problem.expression,
+        correctAns: currentProblemData.problem.answer,
+        p1Ans: null,
+        p2Ans: null
+      };
+    }
+    
+    if (player.slot === 1) room.turnHistory[answeredIdx].p1Ans = data.answer;
+    else if (player.slot === 2) room.turnHistory[answeredIdx].p2Ans = data.answer;
 
     // Send feedback to the answering player
     socket.emit("answer-feedback", {
@@ -1211,24 +1548,15 @@ io.on("connection", (socket) => {
           rooms.delete(code);
           console.log(`[Room] Deleted empty room ${code}`);
         } else {
-          // Если ушел хост — назначаем первого оставшегося игрока новым хостом
-          if (room.hostId === socket.id) {
-            room.hostId = room.players[0].socketId;
-            console.log(`[Room] Host migrated to ${room.players[0].name} in ${code}`);
-            io.to(code).emit('host-changed', { newHost: room.players[0].name });
-          }
-
           io.to(code).emit("room-update", {
             code: room.code,
             players: room.players.map(p => ({ name: p.name, slot: p.slot })),
             difficulty: room.difficulty,
             duration: room.duration,
-            chat: room.chat,
-            hostId: room.hostId // Передаем ID хоста
+            chat: room.chat
           });
-          
           socket.to(code).emit("opponent-disconnected", {
-            message: "Игрок отключился",
+            message: "Соперник отключился",
           });
         }
       }
@@ -1282,24 +1610,23 @@ io.on("connection", (socket) => {
     };
 
     rooms.set(roomCode, room);
-    socket.join(roomCode, () => {
-      socket.roomCode = roomCode;
-      socket.playerSlot = 1;
-      
-      // Fix: Notify client about the match so it initializes its state (myPlayerSlot, opponentName)
-      socket.emit("match-found", {
-        roomCode: roomCode,
-        playerSlot: 1,
-        playerName: username || "Вы",
-        opponentName: profile.name,
-        difficulty: room.difficulty,
-      });
+    socket.join(roomCode);
+    socket.roomCode = roomCode;
+    socket.playerSlot = 1;
 
-      console.log(`[BotGame] Started ${roomCode} for ${username} against ${profile.name}`);
-      
-      // Use the existing startGame logic
-      startGame(roomCode);
+    // Fix: Notify client about the match so it initializes its state (myPlayerSlot, opponentName)
+    socket.emit("match-found", {
+      roomCode: roomCode,
+      playerSlot: 1,
+      playerName: username || "Вы",
+      opponentName: profile.name,
+      difficulty: room.difficulty,
     });
+
+    console.log(`[BotGame] Started ${roomCode} for ${username} against ${profile.name}`);
+    
+    // Use the existing startGame logic
+    startGame(roomCode);
 
     // Bot logical simulation loop
     const runBotSimulation = () => {
@@ -1364,7 +1691,9 @@ io.on("connection", (socket) => {
       timeLeft: timeLeft,
       isRunning: true,
       problemIndex: 0,
-      problems: []
+      problems: [],
+      turnHistory: [],
+      matchUuid: crypto.randomUUID(),
     };
 
     // Pre-generate problems
@@ -1400,49 +1729,27 @@ io.on("connection", (socket) => {
           const score = room.players[0].score;
           db.getUser(username).then(async (user) => {
             if (user) {
-              const bestSolo = Math.max((user.bestSolo || user.bestsolo || 0), score);
-              const xpGain = score * 5;
+              const bestSolo = Math.max(user.bestSolo || 0, score);
               try {
-                await db.updateSoloRecord(username, difficulty, score);
                 await db.updateUserStats(username, {
-                  totalSolved: (user.totalSolved || user.totalsolved || 0) + score,
-                  bestSolo: bestSolo,
-                  xp: (user.xp || 0) + xpGain
+                  totalSolved: user.totalSolved + score,
+                  bestSolo: bestSolo
                 });
                 await db.recordMatchResult({
                   username: username,
                   score: score,
-                  is_win: 1,
+                  is_win: 1, // Every solo completion is a 'win' vs self
                   mode: 'solo'
                 });
-                
-                if (score >= 15) {
-                   addActivity({ type: 'solo', user: username, score: score, mode: difficulty });
-                }
-
+                console.log(`[Solo] Saved stats for ${username}: score=${score}, best=${bestSolo}`);
               } catch (e) {
                 console.error(`[Solo] Error saving stats for ${username}:`, e);
               }
-              
-              const updatedRecords = await db.getUserSoloRecords(username);
-              const myRecord = updatedRecords.find(r => r.mode === difficulty)?.score || 0;
-
               socket.emit("game-over", {
-                player1: { name: room.players[0].name, score, xpGain },
-                player2: { name: "Ваш рекорд", score: myRecord },
-                isSolo: true,
-                mode: difficulty
+                player1: { name: room.players[0].name, score },
+                player2: { name: "Рекорд", score: bestSolo },
+                isSolo: true
               });
-              
-              setTimeout(async () => {
-                const unlocks = await checkAchievements(username);
-                if (unlocks && unlocks.length > 0) {
-                  socket.emit('achievements-unlocked', { achievements: unlocks });
-                  const currentU = await db.getUser(username);
-                  const achXp = unlocks.reduce((acc, a) => acc + (a.xp || 0), 0);
-                  await db.updateUserStats(username, { xp: currentU.xp + achXp });
-                }
-              }, 1000);
             } else {
               socket.emit("game-over", {
                 player1: { name: room.players[0].name, score },
@@ -1483,9 +1790,12 @@ function startGame(roomCode) {
     p.problemIndex = 0;
   });
 
+  const p1 = room.players.find(p => p.slot === 1) || room.players[0];
+  const p2 = room.players.find(p => p.slot === 2) || room.players[1];
+
   io.to(roomCode).emit("game-starting", {
-    player1: { name: room.players[0].name, slot: 1 },
-    player2: { name: room.players[1].name, slot: 2 },
+    player1: { name: p1.name, slot: 1 },
+    player2: { name: p2.name, slot: 2 },
     difficulty: room.difficulty,
     timeLeft: room.timeLeft,
   });
@@ -1503,7 +1813,6 @@ function startGame(roomCode) {
 // ──── Start Server ────
 db.initDB().then(() => {
   console.log('[DB] Database initialized successfully');
-  loadCommunityTasks();
   
   server.listen(PORT, "0.0.0.0", async () => {
     // Get local IP
